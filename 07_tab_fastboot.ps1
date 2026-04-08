@@ -138,6 +138,9 @@ function Invoke-Fastboot($fbArgs) {
     $fbExe = Get-FastbootExe
     if (-not $fbExe) { FbLog "[!] fastboot.exe no encontrado"; return $null }
     try {
+        # IMPORTANTE: usar & operator directamente, NO ProcessStartInfo ni Start-Job.
+        # Los procesos hijo aislados no heredan los handles USB de la sesion PS.
+        # Solo el operador & ejecuta en el mismo contexto y ve los drivers USB.
         $argArr = $fbArgs -split "\s+" | Where-Object { $_ -ne "" }
         $result = & $fbExe $argArr 2>&1
         if ($result -is [array]) { return ($result | ForEach-Object { "$_" }) -join "`n" }
@@ -637,7 +640,7 @@ $fbBtnLeer.Add_Click({
 
     # Serial: todo lo que hay ANTES de la palabra "fastboot" al final de la linea
     # La linea tiene formato: "cf92c6f7\tfastboot" o "cf92c6f7 fastboot"
-    $firstLine = $deviceLines[0].Trim()
+    $firstLine = ("$($deviceLines[0])").Trim()
     $serial = ($firstLine -replace "\s*fastboot\s*$","").Trim()
     if (-not $serial) { $serial = ($firstLine -split "[\t ]+")[0].Trim() }
 
@@ -1167,4 +1170,3 @@ $fbBtnWpCch.Add_Click({
     } catch { FbLog "[!] Error: $_" }
     finally { $fbBtnWpCch.Enabled = $true; $fbBtnWpCch.Text = "WIPE CACHE" }
 })
-

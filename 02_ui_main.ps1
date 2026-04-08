@@ -66,8 +66,9 @@ function New-SideLabel($txt, $y) {
     $l.AutoSize = $true; $sidebar.Controls.Add($l); return $l
 }
 
-# ---- LOGO RNX TOOL (PictureBox con imagen embebida en base64) ----
-$logoPath = Join-Path $PSScriptRoot "logox_r1_c1.jpg"
+# ---- LOGO RNX TOOL (cargado desde archivo local) ----
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$logoPath = Join-Path $scriptDir 'logox_r1_c1.jpg'
 $rnxLogoBmp = [System.Drawing.Image]::FromFile($logoPath)
 $picLogo = New-Object Windows.Forms.PictureBox
 $picLogo.Image    = $rnxLogoBmp
@@ -105,6 +106,7 @@ $Global:lblStorage = New-SideLabel "STORAGE     : -"  480
 $tabs          = New-Object Windows.Forms.TabControl
 $tabs.Location = New-Object System.Drawing.Point(268, 8)
 $tabs.Size     = New-Object System.Drawing.Size(874, 643)
+$tabs.Multiline = $true   # permite que los tabs desbordantes pasen a segunda fila
 $tabs.Font     = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
 $form.Controls.Add($tabs)
 

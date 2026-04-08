@@ -1,43 +1,131 @@
+#==========================================================================
+# TAB ADB: UTILIDADES ADB - Layout y construccion de controles
+# (Movido desde 04_tab_samsung.ps1 para separar logica Samsung de ADB)
+#==========================================================================
+
+$tabAdb           = New-Object Windows.Forms.TabPage
+$tabAdb.Text      = "UTILIDADES ADB"
+$tabAdb.BackColor = [System.Drawing.Color]::FromArgb(30,30,30)
+$tabs.TabPages.Add($tabAdb)
+
+# ---------------------------------------------------------------
+# METRICAS TAB ADB  -  2 columnas simetricas
+# Area util tab: 856px  ->  col izq x=6 w=422 | gap=8 | col der x=436 w=422
+# Botones: BW=196 BH=56  2 por fila con gap 8  ->  196*2+8=400 < 422-24=398 ~OK
+# Ajuste: BW=195 para que 2*195+8+2*PPX = 2*195+8+32 = 426 -> cabe en 422 con margin
+# Grupos col izq altura total: ~606 px  (margen inf ~12px)
+# ---------------------------------------------------------------
+$AX=6; $AGAP=8; $ALOGX=436
+$ABTW=195; $ABTH=56; $APX=14; $APY=20; $AGX=8; $AGY=8
+$AGW=422                       # ancho de cada columna
+$ALOGW=$AGW                    # log misma anchura que columna
+
+# Alturas de grupos
+# grpA1: 2 filas (4 botones: info+reiniciar modo+OTA+adware)
+# grpA2: 3 filas (6 botones: reparacion/seguridad Samsung)
+# grpA3: 1 fila  (2 botones: herramientas Xiaomi)
+# grpA4: 1 fila  (2 botones: automatizacion entregas)
+$AGH1 = $APY + 2*($ABTH+$AGY) - $AGY + 14   # Grupo1: 2 filas (4 botones)
+$AGH2 = $APY + 3*($ABTH+$AGY) - $AGY + 14   # Grupo2: 3 filas (6 botones)
+$AGH3 = $APY + 1*($ABTH+$AGY) - $AGY + 14   # Grupo3: 1 fila  (2 botones)
+$AGH4 = $APY + 1*($ABTH+$AGY) - $AGY + 14   # Grupo4: 1 fila  (2 botones)
+
+$AY1=6
+$AY2=$AY1+$AGH1+$AGAP
+$AY3=$AY2+$AGH2+$AGAP
+$AY4=$AY3+$AGH3+$AGAP
+
+# --- GRUPOS ---
+$grpA1 = New-GBox $tabAdb "INFO, CONTROL Y PROTECCION"   $AX $AY1 $AGW $AGH1 "Cyan"
+$grpA2 = New-GBox $tabAdb "REPARACION Y BYPASS"          $AX $AY2 $AGW $AGH2 "Orange"
+$grpA3 = New-GBox $tabAdb "HERRAMIENTAS XIAOMI"          $AX $AY3 $AGW $AGH3 "Lime"
+$grpA4 = New-GBox $tabAdb "AUTOMATIZACION Y ENTREGAS"    $AX $AY4 $AGW $AGH4 "Magenta"
+
+# grpA1: LEER INFO, REINICIAR MODO (dropdown), BLOQUEAR OTA, REMOVER ADWARE
+$AL1=@("LEER INFO COMPLETA","REINICIAR MODO","BLOQUEAR OTA","REMOVER ADWARE")
+# grpA2: mismo que antes
+$AL2=@("AUTOROOT MAGISK","BYPASS BANCARIO","FIX LOGO SAMSUNG","ACTIVAR SIM 2 SAMSUNG",
+       "INSTALAR MAGISK","RESTAURAR BACKUP")
+# grpA3: ACTIVAR DIAG XIAOMI + DEBLOAT XIAOMI (antes tenia 4 botones, ahora 2)
+$AL3=@("ACTIVAR DIAG XIAOMI","DEBLOAT XIAOMI")
+# grpA4: RESET ENTREGA + INSTALAR APKs
+$AL4=@("RESET RAPIDO ENTREGA","INSTALAR APKs")
+
+$btnsA1=Place-Grid $grpA1 $AL1 "Cyan"    2 $ABTW $ABTH $APX $APY $AGX $AGY
+$btnsA2=Place-Grid $grpA2 $AL2 "Orange"  2 $ABTW $ABTH $APX $APY $AGX $AGY
+$btnsA3=Place-Grid $grpA3 $AL3 "Lime"    2 $ABTW $ABTH $APX $APY $AGX $AGY
+$btnsA4=Place-Grid $grpA4 $AL4 "Magenta" 2 $ABTW $ABTH $APX $APY $AGX $AGY
+
+$btnReadAdb   =$btnsA1[0]; $btnRebootSys=$btnsA1[1]
+$btnRemFRP    =$btnsA2[0]
+
+# Log ocupa toda la altura de la columna derecha
+$ALOGY=$AY1; $ALOGH=616
+
+# Variable global para proceso ADB largo activo (usado por STOP)
+$script:ADB_ACTIVE_PROC = $null
+
+# Boton STOP tab ADB - encima del log, color blanco para visibilidad
+$adbStopH   = 26
+$adbStopGap = 4
+$btnAdbStop           = New-Object Windows.Forms.Button
+$btnAdbStop.Text      = "STOP"
+$btnAdbStop.Location  = New-Object System.Drawing.Point($ALOGX, $ALOGY)
+$btnAdbStop.Size      = New-Object System.Drawing.Size($ALOGW, $adbStopH)
+$btnAdbStop.FlatStyle = "Flat"
+$btnAdbStop.ForeColor = [System.Drawing.Color]::White
+$btnAdbStop.BackColor = [System.Drawing.Color]::FromArgb(55,25,25)
+$btnAdbStop.FlatAppearance.BorderColor = [System.Drawing.Color]::White
+$btnAdbStop.Font      = New-Object System.Drawing.Font("Segoe UI",9.5,[System.Drawing.FontStyle]::Bold)
+$btnAdbStop.Enabled   = $false
+$tabAdb.Controls.Add($btnAdbStop)
+$Global:btnAdbStop = $btnAdbStop
+
+$btnAdbStop.Add_Click({
+    if ($script:ADB_ACTIVE_PROC -and -not $script:ADB_ACTIVE_PROC.HasExited) {
+        try {
+            $script:ADB_ACTIVE_PROC.Kill()
+            AdbLog "[!] Proceso detenido por el usuario."
+        } catch { AdbLog "[!] No se pudo detener: $_" }
+    }
+    $btnAdbStop.Enabled = $false
+})
+
+# Ajustar posicion y alto del log ADB para dejar espacio al STOP
+$adbLogRealY = $ALOGY + $adbStopH + $adbStopGap
+$adbLogRealH = $ALOGH - $adbStopH - $adbStopGap
+
+$Global:logAdb           = New-Object Windows.Forms.TextBox
+$Global:logAdb.Multiline = $true
+$Global:logAdb.Location  = New-Object System.Drawing.Point($ALOGX, $adbLogRealY)
+$Global:logAdb.Size      = New-Object System.Drawing.Size($ALOGW, $adbLogRealH)
+$Global:logAdb.BackColor = "Black"; $Global:logAdb.ForeColor=[System.Drawing.Color]::Cyan
+$Global:logAdb.BorderStyle="FixedSingle"; $Global:logAdb.ScrollBars="Vertical"
+$Global:logAdb.Font      = New-Object System.Drawing.Font("Consolas",8.5)
+$tabAdb.Controls.Add($Global:logAdb)
+# Context menu: Limpiar Log
+$ctxAdb = New-Object System.Windows.Forms.ContextMenuStrip
+$mnuClearAdb = $ctxAdb.Items.Add("Limpiar Log")
+$mnuClearAdb.Font = New-Object System.Drawing.Font("Segoe UI",9,[System.Drawing.FontStyle]::Bold)
+$mnuClearAdb.ForeColor = [System.Drawing.Color]::OrangeRed
+$mnuClearAdb.Add_Click({ $Global:logAdb.Clear() })
+$Global:logAdb.ContextMenuStrip = $ctxAdb
+
+#==========================================================================
+# TAB 3: UTILIDADES GENERALES
+# Layout: 2 columnas simetricas identico a ADB
+#   Col izq  x=10  ancho=424  : 3 grupos de botones apilados
+#   Col der  x=444 ancho=424  : log box altura completa
+# Grupos:
+#   G1 (Red)     FUNCIONES ROOT      4 btn  2 filas  h=172
+#   G2 (Cyan)    UTILIDADES FIRMWARE 4 btn  2 filas  h=172
+#   G3 (Magenta) HERRAMIENTAS MTK    4 btn  2 filas  h=172
+#   Total col izq: 172+8+172+8+172 = 532 < 628 OK
 
 #==========================================================================
 # LOGICA - TAB SAMSUNG FLASHER
 #==========================================================================
-$btnRebRec.Add_Click({
-    try {
-        Assert-DeviceReady -Mode ADB
-        OdinLog "[*] Reiniciando Recovery..."
-        Invoke-ADB "reboot recovery" -LogSource "SAMSUNG" | Out-Null
-        OdinLog "[OK] Enviado."
-    } catch { OdinLog "[!] $_" }
-})
-$btnRebDown.Add_Click({
-    try {
-        Assert-DeviceReady -Mode ADB
-        OdinLog "[*] Reiniciando Download Mode..."
-        Invoke-ADB "reboot download" -LogSource "SAMSUNG" | Out-Null
-        OdinLog "[OK] Enviado."
-    } catch { OdinLog "[!] $_" }
-})
-$btnReadOdin.Add_Click({
-    $btnReadOdin.Enabled=$false; $btnReadOdin.Text="LEYENDO..."
-    [System.Windows.Forms.Application]::DoEvents()
-    try {
-        Write-RNXLogSection "LEER INFO ODIN"
-        Read-OdinInfoPro
-    } catch { OdinLog "[!] Error: $_" }
-    finally { $btnReadOdin.Enabled=$true; $btnReadOdin.Text="LEER INFO (ODIN)" }
-})
-$btnStartFlash.Add_Click({
-    $btnStartFlash.Enabled=$false; $btnStartFlash.Text="FLASHEANDO..."
-    [System.Windows.Forms.Application]::DoEvents()
-    try {
-        Assert-DeviceReady -Mode DOWNLOAD -MinBattery 50 -NeedUnlockedBL
-        Write-RNXLogSection "INICIAR FLASHEO SAMSUNG"
-        Get-DeviceStateSummary | ForEach-Object { Write-RNXLog "INFO" $_ "SAMSUNG" }
-        Start-FlashPro
-    } catch { OdinLog "[!] $_" }
-    finally { $btnStartFlash.Enabled=$true; $btnStartFlash.Text="INICIAR FLASHEO" }
-})
+# Odin tab handlers removed - Samsung tab replaced by Control tab (04_tab_control.ps1)
 
 #==========================================================================
 # LOGICA - TAB UTILIDADES ADB
@@ -220,11 +308,41 @@ $btnReadAdb.Add_Click({
 
     } catch { AdbLog "[!] Error: $_" }
 })
-$btnRebootSys.Add_Click({ if (-not (Check-ADB)) { return }; AdbLog "[*] Reiniciando..."; & adb reboot 2>$null; AdbLog "[OK]" })
-$btnRebootRec.Add_Click({ if (-not (Check-ADB)) { return }; AdbLog "[*] Recovery..."; & adb reboot recovery 2>$null; AdbLog "[OK]" })
-$btnRebootBl.Add_Click({
-    if (-not (Check-ADB)) { return }; AdbLog "[*] Bootloader/Download..."
-    & adb reboot bootloader 2>$null; & adb reboot download 2>$null; AdbLog "[OK]"
+$btnRebootSys.Add_Click({
+    if (-not (Check-ADB)) { return }
+    # Crear menu contextual con las opciones de reinicio
+    $ctxReboot = New-Object System.Windows.Forms.ContextMenuStrip
+    $ctxReboot.BackColor = [System.Drawing.Color]::FromArgb(30,30,30)
+    $ctxReboot.ForeColor = [System.Drawing.Color]::Cyan
+    $ctxReboot.Font = New-Object System.Drawing.Font("Segoe UI",9,[System.Drawing.FontStyle]::Bold)
+
+    $itemSys = $ctxReboot.Items.Add("Reiniciar sistema")
+    $itemSys.ForeColor = [System.Drawing.Color]::Cyan
+    $itemSys.Add_Click({
+        AdbLog "[*] Reiniciando sistema..."; & adb reboot 2>$null; AdbLog "[OK] Reiniciando"
+    })
+
+    $itemRec = $ctxReboot.Items.Add("Reiniciar a recovery")
+    $itemRec.ForeColor = [System.Drawing.Color]::Orange
+    $itemRec.Add_Click({
+        AdbLog "[*] Reiniciando a Recovery..."; & adb reboot recovery 2>$null; AdbLog "[OK] Recovery"
+    })
+
+    $itemFast = $ctxReboot.Items.Add("Reiniciar a fastboot")
+    $itemFast.ForeColor = [System.Drawing.Color]::Lime
+    $itemFast.Add_Click({
+        AdbLog "[*] Reiniciando a Fastboot/Bootloader..."; & adb reboot bootloader 2>$null; AdbLog "[OK] Fastboot"
+    })
+
+    $itemDown = $ctxReboot.Items.Add("Reiniciar a download")
+    $itemDown.ForeColor = [System.Drawing.Color]::Magenta
+    $itemDown.Add_Click({
+        AdbLog "[*] Reiniciando a Download Mode..."; & adb reboot download 2>$null; AdbLog "[OK] Download"
+    })
+
+    # Mostrar el menu justo debajo del boton
+    $pt = $btnRebootSys.PointToScreen([System.Drawing.Point]::new(0, $btnRebootSys.Height))
+    $ctxReboot.Show($pt)
 })
 #==========================================================================
 # AUTOROOT MAGISK 1-CLICK  -  Integrado en boton AUTOROOT MAGISK
@@ -259,9 +377,12 @@ function AutoRoot-SetStatus($btn, $txt) {
 # Estos equipos tienen kernel antiguo incompatible con Magisk 25+
 # Agregar aqui nuevos modelos legacy si se identifican
 $script:MAGISK_LEGACY_MODELS = @(
-    "SM-A217M",   # Galaxy A21s   - Exynos 850
-    "SM-A135M",   # Galaxy A13 4G - Exynos 850
-    "SM-A515G"    # Galaxy A51 5G - Exynos 980
+    "SM-A217M",   # Galaxy A21s       - Exynos 850
+    "SM-A217F",   # Galaxy A21s (EU)  - Exynos 850
+    "SM-A135M",   # Galaxy A13 4G     - Exynos 850
+    "SM-A135F",   # Galaxy A13 4G (EU)- Exynos 850
+    "SM-A515G",   # Galaxy A51 5G     - Exynos 980
+    "SM-A515F"    # Galaxy A51 5G (EU)- Exynos 980
 )
 $script:MAGISKBOOT    = Join-Path $script:TOOLS_DIR "magiskboot.exe"   # Windows x64 nativo
 $script:MAGISK_APK_27 = Join-Path $script:TOOLS_DIR "magisk27.apk"
@@ -654,180 +775,159 @@ function Flash-WithHeimdall($imgPath, $partitionFlag) {
 
 # ---- Abrir Odin con el .tar.md5 listo para flashear ----
 # Logica: SIEMPRE extrae a carpeta temporal nueva (nombre unico por timestamp+random)
-#   - Si existe un Odin3.exe directo en tools\, se copia a una carpeta temporal
-#     nueva para tener instancia limpia con su propio Odin3.ini
-#   - Si solo existe Odin3.zip, se extrae siempre al temp nuevo
-#   - Al cerrar Odin, un Job de background borra TODA la carpeta temporal
-#   - Cada ejecucion es independiente: sin residuos de la anterior
+#   - Crea carpeta temporal unica via GUID (nunca reutiliza residuos anteriores)
+#   - Extrae Odin3.zip SIEMPRE de nuevo en carpeta fresca (logica de odin_launcher.ps1)
+#   - Espera cierre de Odin y limpia carpeta temporal en Job de background
+#   - Cada ejecucion es completamente independiente y sin residuos
 function Open-OdinWithBoot($tarMd5Path) {
+    # Logica identica al odin_launcher.ps1 que funciona:
+    # carpeta GUID limpia + Expand-Archive + buscar Odin*.exe
+    # + verificar INI en la misma carpeta del exe + RunAs + WaitForExit en job
 
-    # --- Paso 1: Crear carpeta temporal UNICA para esta ejecucion ---
-    # Siempre nueva, independiente de ejecuciones anteriores
-    $runId       = (Get-Date -Format "yyyyMMdd_HHmmss") + "_" + ([System.IO.Path]::GetRandomFileName() -replace "\.",""  )
-    $odinTempDir = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), "rnx_odin_$runId")
-    New-Item $odinTempDir -ItemType Directory -Force | Out-Null
-    AutoRoot-Log "[~] Carpeta Odin temporal: $odinTempDir"
+    # --- Paso 1: Carpeta temporal UNICA via GUID ---
+    $tempDir = Join-Path $env:TEMP ("Odin_" + [guid]::NewGuid().ToString())
+    New-Item -ItemType Directory -Path $tempDir | Out-Null
+    AutoRoot-Log "[~] Carpeta Odin temporal: $tempDir"
 
-    $odin = $null
-
-    # Buscar Odin3.exe directo en tools\ o raiz
-    $odinDirect = $null
-    foreach ($c in @((Join-Path $script:TOOLS_DIR "Odin3.exe"), ".\Odin3.exe")) {
-        if (Test-Path $c) { $odinDirect = (Resolve-Path $c).Path; break }
-    }
-
-    if ($odinDirect) {
-        # Copiar Odin3.exe a la carpeta temporal para instancia limpia
-        AutoRoot-Log "[~] Copiando Odin3.exe a instancia temporal..."
-        try {
-            $odinSrcDir = Split-Path $odinDirect
-            # Copiar todos los archivos del directorio de Odin (DLLs, etc.)
-            Get-ChildItem $odinSrcDir -File | ForEach-Object {
-                Copy-Item $_.FullName (Join-Path $odinTempDir $_.Name) -Force -EA SilentlyContinue
-            }
-            $odin = Join-Path $odinTempDir "Odin3.exe"
-            if (Test-Path $odin) {
-                AutoRoot-Log "[+] Odin3.exe copiado a instancia temporal OK"
-            } else {
-                # Fallback: usar directo si la copia fallo
-                $odin = $odinDirect
-                AutoRoot-Log "[~] Copia fallo - usando Odin3.exe directo (sin autolimpieza)"
-                $odinTempDir = $null
-            }
-        } catch {
-            $odin = $odinDirect
-            AutoRoot-Log "[~] Error copiando Odin: $_ - usando directo"
-            $odinTempDir = $null
-        }
-    } else {
-        # Sin Odin3.exe directo - buscar ZIP y extraer siempre de nuevo
-        $odinZip = Join-Path $script:TOOLS_DIR "Odin3.zip"
-        if (Test-Path $odinZip) {
-            AutoRoot-Log "[~] Extrayendo Odin3.zip a instancia temporal..."
-            try {
-                Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction Stop
-                [System.IO.Compression.ZipFile]::ExtractToDirectory($odinZip, $odinTempDir)
-                AutoRoot-Log "[+] ZIP extraido OK en: $odinTempDir"
-            } catch {
-                AutoRoot-Log "[!] Error extrayendo ZIP: $_"
-            }
-            $found = Get-ChildItem $odinTempDir -Recurse -Filter "Odin3.exe" -EA SilentlyContinue | Select-Object -First 1
-            if ($found) {
-                $odin = $found.FullName
-                AutoRoot-Log "[+] Odin3.exe encontrado: $odin"
-            } else {
-                AutoRoot-Log "[!] Odin3.exe no encontrado en el ZIP"
-            }
-        } else {
-            AutoRoot-Log "[!] Ni Odin3.exe ni Odin3.zip encontrados en .\tools"
-        }
-    }
-
-    # --- Paso 2: Suprimir EULA via registro + Odin3.ini en la carpeta temporal ---
-    try {
-        $odinRegPath = "HKCU:\Software\Odin3"
-        if (-not (Test-Path $odinRegPath)) { New-Item -Path $odinRegPath -Force | Out-Null }
-        Set-ItemProperty -Path $odinRegPath -Name "EULA"         -Value 1    -Type DWord  -Force -EA SilentlyContinue
-        Set-ItemProperty -Path $odinRegPath -Name "AgreeEULA"    -Value 1    -Type DWord  -Force -EA SilentlyContinue
-        Set-ItemProperty -Path $odinRegPath -Name "AcceptLicense" -Value "1" -Type String -Force -EA SilentlyContinue
-        AutoRoot-Log "[+] EULA Odin suprimida via registro"
-    } catch { AutoRoot-Log "[~] Registro EULA no aplicado: $_" }
-
-    # Escribir Odin3.ini en la carpeta temporal para suprimir EULA al abrir
-    if ($odin -and (Test-Path (Split-Path $odin))) {
-        try {
-            $odinIni = Join-Path (Split-Path $odin) "Odin3.ini"
-            [System.IO.File]::WriteAllText($odinIni,
-                "[Setting]`r`nAgreeEULA=1`r`nEULA=1`r`nAcceptLicense=1`r`n",
-                [System.Text.Encoding]::ASCII)
-            AutoRoot-Log "[+] Odin3.ini generado en instancia temporal"
-        } catch { }
-    }
-
-    # --- Paso 3: Copiar ruta del .tar.md5 al portapapeles ---
-    $clipOk = $false
-    try {
-        [System.Windows.Forms.Clipboard]::SetText($tarMd5Path)
-        $clipOk = $true
-        AutoRoot-Log "[+] Portapapeles: $([System.IO.Path]::GetFileName($tarMd5Path))  (Ctrl+V en Odin)"
-    } catch {
-        try { $tarMd5Path | & clip.exe; $clipOk = $true; AutoRoot-Log "[+] Portapapeles OK (clip.exe)" }
-        catch { AutoRoot-Log "[~] Portapapeles no disponible: $_" }
-    }
-
-    if (-not $odin) {
-        AutoRoot-Log "[!] No se encontro Odin3.exe ni Odin3.zip en .\tools"
-        AutoRoot-Log "[~] Abre Odin manualmente y carga en slot AP:"
-        AutoRoot-Log "    $tarMd5Path$(if ($clipOk) { '  <- ya en portapapeles, Ctrl+V' })"
-        # Limpiar carpeta temporal si no se llego a usar
-        if ($odinTempDir -and (Test-Path $odinTempDir)) {
-            Remove-Item $odinTempDir -Recurse -Force -EA SilentlyContinue
-        }
+    # --- Paso 2: Buscar y extraer Odin3.zip SIEMPRE de nuevo (nunca reutilizar) ---
+    $odinZip = Join-Path $script:TOOLS_DIR "Odin3.zip"
+    if (-not (Test-Path $odinZip)) {
+        AutoRoot-Log "[!] No se encontro Odin3.zip en: $($script:TOOLS_DIR)"
+        AutoRoot-Log "[~] Coloca Odin3.zip en la carpeta tools\"
+        AutoRoot-Log "[~] Abre Odin manualmente y carga: $tarMd5Path"
+        Remove-Item $tempDir -Recurse -Force -EA SilentlyContinue
         Start-Process explorer.exe (Split-Path $tarMd5Path) -EA SilentlyContinue
         return
     }
 
-    # --- Paso 4: Lanzar Odin desde la carpeta temporal ---
-    AutoRoot-Log "[~] Abriendo Odin3 (instancia temporal: $runId)..."
-    $odinDir  = Split-Path $odin
+    AutoRoot-Log "[~] Extrayendo Odin3.zip a instancia temporal limpia..."
+    try {
+        Expand-Archive -Path $odinZip -DestinationPath $tempDir -Force
+        AutoRoot-Log "[+] ZIP extraido OK"
+    } catch {
+        AutoRoot-Log "[!] Error extrayendo ZIP: $_"
+        Remove-Item $tempDir -Recurse -Force -EA SilentlyContinue
+        return
+    }
+
+    # Buscar el ejecutable (mas flexible, igual que el launcher)
+    $odinExeItem = Get-ChildItem -Path $tempDir -Recurse -Filter "Odin*.exe" | Select-Object -First 1
+    if (-not $odinExeItem) {
+        AutoRoot-Log "[!] No se encontro el ejecutable de Odin en el ZIP"
+        Remove-Item $tempDir -Recurse -Force -EA SilentlyContinue
+        return
+    }
+    $odinExe    = $odinExeItem.FullName
+    $odinRunDir = $odinExeItem.Directory.FullName
+    AutoRoot-Log "[+] Odin3.exe encontrado: $($odinExeItem.Name)"
+
+    # --- Paso 3: Verificar e inyectar Odin3.ini en la MISMA carpeta del exe ---
+    $iniPath = Join-Path $odinRunDir "Odin3.ini"
+    if (-not (Test-Path $iniPath)) {
+        AutoRoot-Log "[!] Falta Odin3.ini junto al ejecutable"
+        AutoRoot-Log "[~] Generando Odin3.ini de emergencia..."
+    }
+    try {
+        [System.IO.File]::WriteAllText(
+            $iniPath,
+            "[Setting]`r`nAgreeEULA=1`r`nEULA=1`r`nAcceptLicense=1`r`n",
+            [System.Text.Encoding]::ASCII)
+        AutoRoot-Log "[+] Odin3.ini generado/actualizado OK"
+    } catch { AutoRoot-Log "[~] INI: $_" }
+
+    # Suprimir EULA via registro tambien (doble seguro)
+    try {
+        $rk = "HKCU:\Software\Odin3"
+        if (-not (Test-Path $rk)) { New-Item -Path $rk -Force | Out-Null }
+        Set-ItemProperty -Path $rk -Name "EULA"          -Value 1    -Type DWord  -Force -EA SilentlyContinue
+        Set-ItemProperty -Path $rk -Name "AgreeEULA"     -Value 1    -Type DWord  -Force -EA SilentlyContinue
+        Set-ItemProperty -Path $rk -Name "AcceptLicense" -Value "1"  -Type String -Force -EA SilentlyContinue
+    } catch {}
+
+    # --- Paso 4: Copiar ruta al portapapeles ---
+    $clipOk = $false
+    try {
+        [System.Windows.Forms.Clipboard]::SetText($tarMd5Path)
+        $clipOk = $true
+        AutoRoot-Log "[+] Portapapeles: $([System.IO.Path]::GetFileName($tarMd5Path))  <-- Ctrl+V en Odin slot AP"
+    } catch {
+        try { $tarMd5Path | & clip.exe; $clipOk = $true } catch {}
+        if ($clipOk) { AutoRoot-Log "[+] Portapapeles OK (clip.exe)" }
+        else { AutoRoot-Log "[~] Portapapeles no disponible - copia la ruta manualmente" }
+    }
+
+    # --- Paso 5: Lanzar Odin DESDE su carpeta (WorkingDirectory = carpeta del exe) ---
+    # Identico al odin_launcher.ps1: Start-Process con RunAs y WorkingDirectory correcto
+    AutoRoot-Log "[~] Abriendo Odin3 con elevacion de privilegios..."
     $odinProc = $null
     try {
-        $psi                  = New-Object System.Diagnostics.ProcessStartInfo
-        $psi.FileName         = $odin
-        $psi.WorkingDirectory = $odinDir
-        $psi.UseShellExecute  = $true
-        $odinProc = [System.Diagnostics.Process]::Start($psi)
-        AutoRoot-Log "[+] Odin3 abierto (PID: $($odinProc.Id))"
+        $odinProc = Start-Process `
+            -FilePath      $odinExe `
+            -WorkingDirectory $odinRunDir `
+            -Verb RunAs `
+            -PassThru
+        if ($odinProc) { AutoRoot-Log "[+] Odin3 abierto (PID: $($odinProc.Id))" }
+        else           { AutoRoot-Log "[+] Odin3 lanzado (UAC elevado, PID no disponible)" }
     } catch {
+        AutoRoot-Log "[~] RunAs fallo ($($_.Exception.Message)) - intentando sin elevacion..."
         try {
-            $odinProc = Start-Process $odin -WorkingDirectory $odinDir -PassThru -EA Stop
-            AutoRoot-Log "[+] Odin3 abierto fallback (PID: $($odinProc.Id))"
-        } catch { AutoRoot-Log "[!] No se pudo abrir Odin3.exe: $_" }
+            $psi2 = New-Object System.Diagnostics.ProcessStartInfo
+            $psi2.FileName         = $odinExe
+            $psi2.WorkingDirectory = $odinRunDir
+            $psi2.UseShellExecute  = $true
+            $odinProc = [System.Diagnostics.Process]::Start($psi2)
+            AutoRoot-Log "[+] Odin3 abierto sin elevacion (PID: $($odinProc.Id))"
+        } catch {
+            AutoRoot-Log "[!] No se pudo abrir Odin3.exe: $_"
+            AutoRoot-Log "[~] Abre manualmente: $odinExe"
+        }
     }
 
-    # --- Paso 5: Job de autodestruccion - borra TODA la carpeta temporal al cerrar Odin ---
-    # Se ejecuta siempre que haya carpeta temporal, independientemente de si fue
-    # extraido del ZIP o copiado desde el directo
-    if ($odinProc -and $odinTempDir -and (Test-Path $odinTempDir)) {
-        $cleanupDir = $odinTempDir   # captura en scope local para el job
-        $null = Start-Job -ScriptBlock {
-            param($procId, $dirPath)
-            # Esperar a que Odin cierre
+    # --- Paso 6: Job de autolimpieza (espera cierre de Odin y borra carpeta temp) ---
+    $cleanDir = $tempDir
+    $cleanPid = if ($odinProc) { $odinProc.Id } else { 0 }
+    $null = Start-Job -ScriptBlock {
+        param($procId, $dirPath)
+        if ($procId -gt 0) {
             try {
                 $p = Get-Process -Id $procId -EA SilentlyContinue
-                if ($p) { $p.WaitForExit() }
+                if ($p) { $p.WaitForExit(600000) }  # max 10 min
             } catch {}
-            # Espera adicional para que Odin libere todos los archivos
-            Start-Sleep -Seconds 3
-            # Borrar toda la carpeta temporal
-            try {
-                Remove-Item -Path $dirPath -Recurse -Force -EA SilentlyContinue
-            } catch {}
-            # Segunda pasada por si quedaron archivos bloqueados
-            Start-Sleep -Seconds 2
-            if (Test-Path $dirPath) {
-                try { Remove-Item -Path $dirPath -Recurse -Force -EA SilentlyContinue } catch {}
+        } else {
+            # Sin PID (UAC elevado), esperar 5 min o hasta que el proceso desaparezca
+            $start = Get-Date
+            while (((Get-Date) - $start).TotalSeconds -lt 300) {
+                Start-Sleep -Seconds 10
+                $still = Get-Process -Name "Odin3*" -EA SilentlyContinue
+                if (-not $still) { break }
             }
-        } -ArgumentList $odinProc.Id, $cleanupDir
-        AutoRoot-Log "[~] Autolimpieza activada - carpeta se borra al cerrar Odin"
-    }
+        }
+        Start-Sleep -Seconds 5
+        try { Remove-Item -Path $dirPath -Recurse -Force -EA SilentlyContinue } catch {}
+        Start-Sleep -Seconds 3
+        if (Test-Path $dirPath) {
+            try { Remove-Item -Path $dirPath -Recurse -Force -EA SilentlyContinue } catch {}
+        }
+    } -ArgumentList $cleanPid, $cleanDir
+    AutoRoot-Log "[~] Autolimpieza activada: carpeta se borra al cerrar Odin"
 
-    # --- Paso 6: Instrucciones ---
+    # --- Paso 7: Instrucciones ---
     AutoRoot-Log ""
     AutoRoot-Log "================================================"
     AutoRoot-Log "  ODIN ABIERTO - SIGUE ESTOS PASOS:"
     AutoRoot-Log "================================================"
-    AutoRoot-Log "  1. Clic en [ AP ] en Odin"
-    AutoRoot-Log "  2. Pega con  Ctrl+V  en el dialogo de archivo"
-    AutoRoot-Log "     (la ruta ya esta en tu portapapeles)"
+    AutoRoot-Log "  1. En Odin presiona el boton [ AP ]"
+    AutoRoot-Log "  2. En el dialogo de archivo presiona Ctrl+V"
+    AutoRoot-Log "     (la ruta del TAR ya esta en el portapapeles)"
     AutoRoot-Log "     Archivo: $([System.IO.Path]::GetFileName($tarMd5Path))"
-    AutoRoot-Log "  3. Equipo en DOWNLOAD MODE"
-    AutoRoot-Log "     Vol- + Power  o  adb reboot download"
-    AutoRoot-Log "  4. Clic en [ Start ] en Odin"
+    AutoRoot-Log "  3. Asegurate que el equipo este en DOWNLOAD MODE"
+    AutoRoot-Log "     (pantalla azul/verde con icono de descarga)"
+    AutoRoot-Log "  4. Presiona [ Start ] en Odin"
     AutoRoot-Log "================================================"
-    AutoRoot-Log "  Ruta: $tarMd5Path"
+    AutoRoot-Log "  Ruta completa: $tarMd5Path"
     AutoRoot-Log "================================================"
 
+    # Abrir Explorer en la carpeta del TAR como referencia
     Start-Process explorer.exe (Split-Path $tarMd5Path) -EA SilentlyContinue
 }
 
@@ -869,6 +969,48 @@ $btnsA2[1].BackColor = [System.Drawing.Color]::FromArgb(40,35,10)
 $btnsA2[1].FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(255,215,0)
 $btnsA2[1].Font = New-Object System.Drawing.Font("Segoe UI",7.5,[System.Drawing.FontStyle]::Bold)
 
+# Boton btnsA2[5]: SAMFW FIRMWARE - Buscar y abrir firmware Samsung en samfw.com
+$btnsA2[5].Text = "SAMFW FIRMWARE"
+$btnsA2[5].ForeColor = [System.Drawing.Color]::FromArgb(0,180,255)
+$btnsA2[5].FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(0,180,255)
+$btnsA2[5].Font = New-Object System.Drawing.Font("Segoe UI",7.5,[System.Drawing.FontStyle]::Bold)
+
+# Boton btnsA1[2]: BLOQUEAR OTA (ahora en posicion 2, grupo reducido a 4 botones)
+$btnsA1[2].Text = "BLOQUEAR OTA"
+$btnsA1[2].ForeColor = [System.Drawing.Color]::FromArgb(0,220,180)
+$btnsA1[2].FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(0,220,180)
+$btnsA1[2].Font = New-Object System.Drawing.Font("Segoe UI",7.5,[System.Drawing.FontStyle]::Bold)
+
+# Boton btnsA1[3]: REMOVER ADWARE (ahora en posicion 3, grupo reducido a 4 botones)
+$btnsA1[3].Text = "REMOVER ADWARE"
+$btnsA1[3].ForeColor = [System.Drawing.Color]::FromArgb(255,100,0)
+$btnsA1[3].FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(255,100,0)
+$btnsA1[3].Font = New-Object System.Drawing.Font("Segoe UI",7.5,[System.Drawing.FontStyle]::Bold)
+
+# Boton btnsA3[0]: ACTIVAR DIAG XIAOMI
+$btnsA3[0].Text = "ACTIVAR DIAG XIAOMI"
+$btnsA3[0].ForeColor = [System.Drawing.Color]::FromArgb(0,200,200)
+$btnsA3[0].FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(0,200,200)
+$btnsA3[0].Font = New-Object System.Drawing.Font("Segoe UI",7.5,[System.Drawing.FontStyle]::Bold)
+
+# Boton btnsA3[1]: DEBLOAT XIAOMI
+$btnsA3[1].Text = "DEBLOAT XIAOMI"
+$btnsA3[1].ForeColor = [System.Drawing.Color]::FromArgb(50,255,120)
+$btnsA3[1].FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(50,255,120)
+$btnsA3[1].Font = New-Object System.Drawing.Font("Segoe UI",7.5,[System.Drawing.FontStyle]::Bold)
+
+# Boton btnsA4[0]: RESET RAPIDO ENTREGA
+$btnsA4[0].Text = "RESET RAPIDO ENTREGA"
+$btnsA4[0].ForeColor = [System.Drawing.Color]::FromArgb(220,60,220)
+$btnsA4[0].FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(220,60,220)
+$btnsA4[0].Font = New-Object System.Drawing.Font("Segoe UI",7.5,[System.Drawing.FontStyle]::Bold)
+
+# Boton btnsA4[1]: INSTALAR APKs
+$btnsA4[1].Text = "INSTALAR APKs"
+$btnsA4[1].ForeColor = [System.Drawing.Color]::FromArgb(180,80,255)
+$btnsA4[1].FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(180,80,255)
+$btnsA4[1].Font = New-Object System.Drawing.Font("Segoe UI",7.5,[System.Drawing.FontStyle]::Bold)
+
 $btnRemFRP.Add_Click({
     $btn = $btnRemFRP
 
@@ -904,33 +1046,48 @@ $btnRemFRP.Add_Click({
     Write-RNXLogSection "AUTOROOT MAGISK"
     Get-DeviceStateSummary | ForEach-Object { Write-RNXLog "INFO" $_ "ADB" }
 
-    # --- PASO 1: Leer info del dispositivo directamente con adb shell getprop ---
-    # (Invoke-ADBGetprop puede devolver vacio si el wrapper filtra la salida;
-    #  se lee directo para garantizar que los datos aparezcan en el log)
+    # --- PASO 1: Leer info del dispositivo via adb directo (igual al resto de botones) ---
     AutoRoot-Log "[1] Leyendo informacion del dispositivo..."
     AutoRoot-SetStatus $btn "LEYENDO INFO..."
     [System.Windows.Forms.Application]::DoEvents()
 
-    function AR-Prop($prop) {
-        try {
-            $r = (& adb shell getprop $prop 2>$null)
-            if ($r -is [array]) { $r = ($r -join "").Trim() } else { $r = "$r".Trim() }
-            # Filtrar ruido del daemon ADB
-            $r = ($r -split "`n") | Where-Object { $_ -notmatch "daemon|starting|successfully|List of devices|^\s*$" } | Select-Object -First 1
-            return if ($r) { $r.Trim() } else { "" }
-        } catch { return "" }
+    # Resolver ejecutable adb: intentar SVC_ADB cacheado, luego buscar manual, luego PATH
+    $script:_arAdb = $null
+    if ($script:SVC_ADB -and (Test-Path $script:SVC_ADB -ErrorAction SilentlyContinue)) {
+        $script:_arAdb = $script:SVC_ADB
+    } else {
+        foreach ($c in @(
+            (Join-Path $script:TOOLS_DIR "adb.exe"),
+            "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe",
+            "$env:USERPROFILE\AppData\Local\Android\Sdk\platform-tools\adb.exe",
+            "C:\platform-tools\adb.exe",
+            "C:\android\platform-tools\adb.exe"
+        )) {
+            if (Test-Path $c -ErrorAction SilentlyContinue) { $script:_arAdb = $c; break }
+        }
+        if (-not $script:_arAdb) {
+            try { $gc = Get-Command "adb" -ErrorAction SilentlyContinue; if ($gc) { $script:_arAdb = $gc.Source } } catch {}
+        }
     }
 
-    $devModel    = AR-Prop "ro.product.model"
-    $devBuild    = AR-Prop "ro.build.display.id"
-    $devAndroid  = AR-Prop "ro.build.version.release"
-    $devPatch    = AR-Prop "ro.build.version.security_patch"
-    $devCodename = AR-Prop "ro.product.device"
-    $devCsc      = AR-Prop "ro.csc.sales_code"
-    if (-not $devCsc) { $devCsc = AR-Prop "ro.csc.country.code" }
-    $oemLock     = AR-Prop "ro.boot.flash.locked"
+    # Helper de lectura directa - igual al patron que funciona en Leer Info / Instalar Magisk
+    function AR-Getprop([string]$prop) {
+        if (-not $script:_arAdb) { return "" }
+        try { $v = (& $script:_arAdb shell getprop $prop 2>$null); if ($v) { return $v.Trim() } } catch {}
+        return ""
+    }
+
+    $devModel    = AR-Getprop "ro.product.model"
+    $devBuild    = AR-Getprop "ro.build.display.id"
+    $devAndroid  = AR-Getprop "ro.build.version.release"
+    $devPatch    = AR-Getprop "ro.build.version.security_patch"
+    $devCodename = AR-Getprop "ro.product.device"
+    $devCsc      = AR-Getprop "ro.csc.sales_code"
+    if (-not $devCsc) { $devCsc = AR-Getprop "ro.csc.country.code" }
+    $oemLock     = AR-Getprop "ro.boot.flash.locked"
+    $devSerial   = ""
     try {
-        $devSerial = ((& adb get-serialno 2>$null) | Where-Object { $_ -notmatch "daemon|starting|^\s*$" } | Select-Object -First 1).Trim()
+        if ($script:_arAdb) { $devSerial = (& $script:_arAdb get-serialno 2>$null).Trim() }
     } catch { $devSerial = "" }
 
     # Mostrar siempre, incluso si vacio (para diagnostico)
@@ -946,7 +1103,15 @@ $btnRemFRP.Add_Click({
     [System.Windows.Forms.Application]::DoEvents()
 
     # --- SELECCION AUTOMATICA DE VERSION DE MAGISK ---
-    $magiskbootExe = Get-MagiskbootExe $devModel
+    # Asegurar que devModel este limpio antes de la deteccion legacy
+    $devModelClean = if ($devModel) { $devModel.Trim().ToUpper() } else { "" }
+    if (-not $devModelClean) {
+        AutoRoot-Log "[!] No se pudo leer el modelo del dispositivo."
+        AutoRoot-Log "[~] Verifica la conexion ADB y USB Debugging activo."
+        AutoRoot-SetStatus $btn "AUTOROOT MAGISK"
+        return
+    }
+    $magiskbootExe = Get-MagiskbootExe $devModelClean
     if (-not $magiskbootExe) {
         AutoRoot-Log "[!] No se pudo preparar magiskboot o los binarios de Magisk"
         AutoRoot-Log "[~] Verifica que tienes en .\tools\:"
@@ -1258,73 +1423,25 @@ $btnRemFRP.Add_Click({
     }
     AutoRoot-Log ""
 
-    # --- PASO 8: Flash ---
-    AutoRoot-Log "[8] Iniciando flash del boot parcheado..."
+    # --- PASO 8: Flash via Odin (semi-manual) ---
+    AutoRoot-Log "[8] Preparando flash con Odin..."
     AutoRoot-Log "[!] IMPORTANTE: El equipo debe estar en DOWNLOAD MODE"
     AutoRoot-Log "[~] Reiniciando a Download Mode via ADB..."
     & adb reboot download 2>$null
-    AutoRoot-Log "[~] Esperando que entre en Download Mode (15s)..."
-    Start-Sleep -Seconds 4
+    AutoRoot-Log "[~] Esperando entrada a Download Mode..."
+    Start-Sleep -Seconds 5
     [System.Windows.Forms.Application]::DoEvents()
 
-    # Intentar con Heimdall primero (CLI, automatico)
-    $heimdallAvail = $false
-    foreach ($c in @((Join-Path $script:TOOLS_DIR "heimdall.exe"),".\heimdall.exe","heimdall")) {
-        if ((Test-Path $c) -or (Get-Command $c -ErrorAction SilentlyContinue)) {
-            $heimdallAvail = $true; break
-        }
-    }
+    # Mensaje de espera: instrucciones mientras el equipo entra en DL mode
+    [System.Windows.Forms.MessageBox]::Show(
+        "El equipo esta reiniciando a DOWNLOAD MODE.`n`nEspera a que aparezca la pantalla de descarga en el telefono.`n`nDespues presiona OK para abrir Odin.",
+        "Esperando Download Mode",
+        [System.Windows.Forms.MessageBoxButtons]::OK,
+        [System.Windows.Forms.MessageBoxIcon]::Information) | Out-Null
 
-    if ($heimdallAvail) {
-        AutoRoot-Log "[~] Usando Heimdall (automatico)..."
-        AutoRoot-SetStatus $btn "FLASHEANDO..."
-
-        # Esperar Download Mode - timeout reducido a 16s para saltar al fallback Odin mas rapido
-        AutoRoot-Log "[~] Esperando entrada a Download Mode (hasta 16s)..."
-        $devDetected = $false
-        for ($w = 0; $w -lt 8; $w++) {
-            Start-Sleep -Seconds 2
-            [System.Windows.Forms.Application]::DoEvents()
-            $det = Invoke-HeimdallAdv "detect" 2>$null
-            if ($det -imatch "Device detected") {
-                AutoRoot-Log "[+] Dispositivo detectado en Download Mode ($($w*2)s)"
-                $devDetected = $true; break
-            }
-            if ($w % 2 -eq 0) { AutoRoot-Log "[~] Esperando Download Mode... ($($w*2)s)" }
-        }
-        if (-not $devDetected) {
-            AutoRoot-Log "[!] Heimdall no detecto el dispositivo en 16s - saltando a Odin..."
-            Open-OdinWithBoot $tarResult.TarMd5
-            AutoRoot-Log "[~] Si el equipo ya esta en Download Mode, el flash manual funciona"
-        }
-        if ($devDetected) {
-
-        # Heimdall mapea: BOOT para boot.img, INIT_BOOT para init_boot.img
-        # En SM-G990E la particion fisica se llama BOOT aunque el archivo sea init_boot
-        $heimPartFlag = $partName
-        AutoRoot-Log "[~] Particion Heimdall: --$heimPartFlag"
-        AutoRoot-Log "[~] Imagen a flashear : $([System.IO.Path]::GetFileName($patchedImg))"
-        $flashOk = Flash-WithHeimdall $patchedImg $heimPartFlag
-
-        if ($flashOk) {
-            AutoRoot-Log ""
-            AutoRoot-Log "[OK] FLASH COMPLETADO via Heimdall"
-            AutoRoot-Log "[~] Reiniciando sistema..."
-            Invoke-Heimdall "flash --REBOOT" | Out-Null
-            Start-Sleep -Seconds 2
-            $Global:lblStatus.Text = "  RNX TOOL PRO v2.3  |  AUTOROOT OK  |  Reiniciando..."
-            # Verificar root post-flash
-            AutoRoot-SetStatus $btn "VERIFICANDO..."
-            Verify-RootPost
-        } else {
-            AutoRoot-Log "[!] Heimdall fallo - abriendo Odin como alternativa..."
-            Open-OdinWithBoot $tarResult.TarMd5
-        }
-        } # fin $devDetected
-    } else {
-        AutoRoot-Log "[~] Heimdall no disponible - usando Odin (modo semi-manual)..."
-        Open-OdinWithBoot $tarResult.TarMd5
-    }
+    AutoRoot-Log "[~] Abriendo Odin con el TAR parcheado..."
+    AutoRoot-SetStatus $btn "ABRIENDO ODIN..."
+    Open-OdinWithBoot $tarResult.TarMd5
 
     # --- Resumen final ---
     AutoRoot-Log ""
@@ -1519,6 +1636,7 @@ $btnsA2[1].Add_Click({
     Bypass-Log "=============================================="
     Bypass-Log ""
     Bypass-Log "[*] TARGET: Yape, BCP, BBVA, Interbank, Scotiabank, BIM, Ripley, Falabella"
+    Bypass-Log "[*] LEGACY (A21s/A135/A515): Magisk 24 -> Delta 27 -> flujo estandar"
     Bypass-Log ""
     $toolsDir   = $script:TOOLS_DIR
     $modulesDir = $script:MODULES_DIR
@@ -1592,59 +1710,212 @@ $btnsA2[1].Add_Click({
     Bypass-Log "[+] Magisk v$($mInfo.Version) | APK: $(if($mInfo.ApkInstalled){'OK'} else {'FALLO - instalar manualmente'}) | Delta: $($mInfo.IsDelta)"
     Bypass-Log ""
 
-    # RAMA LEGACY: Magisk 24 -> migrar a Delta
-    if ($isLegacy -and $mInfo.VerNum -lt 25 -and -not $mInfo.IsDelta) {
+    # RAMA LEGACY: Flujo Magisk 24 -> Delta -> Magisk 27 completo
+    if ($isLegacy) {
         Bypass-Log "================================================"
-        Bypass-Log "  RUTA LEGACY: Migrando Magisk 24 -> Delta v27"
+        Bypass-Log "  RUTA LEGACY: A21s / A13 / A51 - Flujo completo"
+        Bypass-Log "  Magisk 24 -> Delta Module -> Magisk 27"
         Bypass-Log "================================================"
-        $missing=@()
-        if (-not (Test-Path $zipDelta))  { $missing+="tools\modules\Magisk-Delta-V27.zip" }
-        if (-not (Test-Path $apkDelta))  { $missing+="tools\magisk_delta.apk" }
-        if ($missing.Count -gt 0) {
-            foreach ($m in $missing) { Bypass-Log "[!] Falta: $m" }
-            Bypass-SetStatus $btn "BYPASS BANCARIO"; return
-        }
-        Bypass-Log "[A1] Instalando Delta como modulo de Magisk 24..."
-        Bypass-SetStatus $btn "DELTA MODULO..."
-        if (-not (Install-MagiskModule $zipDelta "Magisk-Delta-V27")) {
-            Bypass-Log "[!] Fallo instalacion modulo Delta"
-            Bypass-SetStatus $btn "BYPASS BANCARIO"; return
-        }
         Bypass-Log ""
-        Bypass-Log "[A2] Instalando Magisk Delta APK..."
-        Bypass-SetStatus $btn "DELTA APK..."
+
+        # --- PASO L1: Verificar e instalar Magisk 24 ---
+        Bypass-Log "[L1] Verificando Magisk 24..."
+        Bypass-SetStatus $btn "VERIFICANDO MAGISK 24..."
+        $m24Info = Get-MagiskInfo
+        if (-not $m24Info.BinaryInstalled -or $m24Info.VerNum -ge 25) {
+            Bypass-Log "[~]  Magisk 24 no instalado o version incorrecta -> instalando..."
+            if (-not (Test-Path $apkM24)) {
+                Bypass-Log "[!] No se encontro magisk24.apk en tools\"
+                Bypass-SetStatus $btn "BYPASS BANCARIO"; return
+            }
+            Install-Apk $apkM24 "Magisk 24" | Out-Null
+            Start-Sleep -Seconds 3
+            $m24Info = Get-MagiskInfo
+            if (-not $m24Info.BinaryInstalled) {
+                Bypass-Log "[!] Fallo instalacion de Magisk 24. Verifica el APK."
+                Bypass-SetStatus $btn "BYPASS BANCARIO"; return
+            }
+        }
+        Bypass-Log "[+] Magisk 24 OK  (v$($m24Info.Version))"
+        Bypass-Log ""
+
+        # --- PASO L2: Cargar modulo Delta v27 al equipo ---
+        Bypass-Log "[L2] Subiendo modulo Magisk-Delta al equipo..."
+        Bypass-SetStatus $btn "SUBIENDO DELTA ZIP..."
+        if (-not (Test-Path $zipDelta)) {
+            Bypass-Log "[!] No se encontro Magisk-Delta-V27.zip en tools\modules\"
+            Bypass-SetStatus $btn "BYPASS BANCARIO"; return
+        }
+        & adb shell "mkdir -p /sdcard/rnx_modules" 2>$null | Out-Null
+        & adb push "$zipDelta" "/sdcard/rnx_modules/Magisk-Delta-V27.zip" 2>&1 | ForEach-Object {
+            if ("$_" -match "KB/s|MB/s|bytes") { Bypass-Log "    $_" }
+        }
+        $chkDelta = (& adb shell "[ -f /sdcard/rnx_modules/Magisk-Delta-V27.zip ] && echo OK || echo FAIL" 2>$null) -join ""
+        if ($chkDelta -notmatch "OK") {
+            Bypass-Log "[!] Error subiendo Magisk-Delta-V27.zip al equipo"
+            Bypass-SetStatus $btn "BYPASS BANCARIO"; return
+        }
+        Bypass-Log "[+] Magisk-Delta-V27.zip subido -> /sdcard/rnx_modules/"
+        Bypass-Log ""
+
+        # --- PASO L3: Abrir Magisk y mostrar instrucciones para instalar Delta zip ---
+        Bypass-Log "[L3] Abriendo Magisk en el celular para instalar modulo Delta..."
+        & adb shell "am start -n com.topjohnwu.magisk/.ui.MainActivity" 2>$null | Out-Null
+        Start-Sleep -Milliseconds 1000
+        $screenSz = (& adb shell "wm size" 2>$null) -join ""
+        $tapX2 = 540; $tapY2 = 900
+        if ($screenSz -match "(\d+)x(\d+)") {
+            $sw2 = [int]$Matches[1]; $sh2 = [int]$Matches[2]
+            $tapX2 = [int]($sw2 * 0.375); $tapY2 = [int]($sh2 * 0.962)
+        }
+        & adb shell "input tap $tapX2 $tapY2" 2>$null | Out-Null
+        Start-Sleep -Milliseconds 600
+        [System.Windows.Forms.Application]::DoEvents()
+
+        $nl = "`r`n"
+        $instrDelta  = "-------------------------------------------------------$nl"
+        $instrDelta += "  MODULO DELTA LISTO EN: /sdcard/rnx_modules/$nl"
+        $instrDelta += "  (Magisk 24 ya se abrio en el celular)$nl"
+        $instrDelta += "-------------------------------------------------------$nl"
+        $instrDelta += "$nl"
+        $instrDelta += "  Sigue estos pasos en el celular:$nl"
+        $instrDelta += "$nl"
+        $instrDelta += "  [1]  En Magisk 24 toca la pestana MODULOS (icono puzzle)$nl"
+        $instrDelta += "$nl"
+        $instrDelta += "  [2]  Toca >> Instalar desde almacenamiento$nl"
+        $instrDelta += "$nl"
+        $instrDelta += "  [3]  Navega a: /sdcard/rnx_modules/$nl"
+        $instrDelta += "$nl"
+        $instrDelta += "  [4]  Selecciona e instala: Magisk-Delta-V27.zip$nl"
+        $instrDelta += "$nl"
+        $instrDelta += "  [5]  Si pide reinicio, toca 'Mas tarde'$nl"
+        $instrDelta += "       NO reinicies todavia.$nl"
+        $instrDelta += "$nl"
+        $instrDelta += "  [6]  Con el modulo instalado, vuelve aqui y$nl"
+        $instrDelta += "       presiona el boton verde para continuar.$nl"
+        $instrDelta += "$nl"
+        $instrDelta += "-------------------------------------------------------$nl"
+        $instrDelta += "  IMPORTANTE: Instala el modulo Delta SIN reiniciar$nl"
+        $instrDelta += "  El programa continuara automaticamente despues.$nl"
+        $instrDelta += "-------------------------------------------------------$nl"
+
+        $dlgDelta = New-Object System.Windows.Forms.Form
+        $dlgDelta.Text = "RNX TOOL PRO - Instalar Modulo Delta en Magisk 24"
+        $dlgDelta.ClientSize = New-Object System.Drawing.Size(560, 460)
+        $dlgDelta.BackColor = [System.Drawing.Color]::FromArgb(18,18,18)
+        $dlgDelta.FormBorderStyle = "FixedDialog"
+        $dlgDelta.StartPosition = "CenterScreen"
+        $dlgDelta.TopMost = $true
+
+        $lbDeltaTitulo = New-Object Windows.Forms.Label
+        $lbDeltaTitulo.Text = "INSTALAR MODULO DELTA EN MAGISK 24  [LEGACY]"
+        $lbDeltaTitulo.Location = New-Object System.Drawing.Point(14,12)
+        $lbDeltaTitulo.Size = New-Object System.Drawing.Size(532,20)
+        $lbDeltaTitulo.ForeColor = [System.Drawing.Color]::FromArgb(255,180,0)
+        $lbDeltaTitulo.Font = New-Object System.Drawing.Font("Segoe UI",9,[System.Drawing.FontStyle]::Bold)
+        $dlgDelta.Controls.Add($lbDeltaTitulo)
+
+        $txtDelta = New-Object Windows.Forms.TextBox
+        $txtDelta.Multiline = $true; $txtDelta.ReadOnly = $true; $txtDelta.Text = $instrDelta
+        $txtDelta.Location = New-Object System.Drawing.Point(14,38)
+        $txtDelta.Size = New-Object System.Drawing.Size(532,370)
+        $txtDelta.BackColor = [System.Drawing.Color]::FromArgb(25,25,25)
+        $txtDelta.ForeColor = [System.Drawing.Color]::White
+        $txtDelta.Font = New-Object System.Drawing.Font("Consolas",9)
+        $txtDelta.ScrollBars = "Vertical"
+        $dlgDelta.Controls.Add($txtDelta)
+
+        $btnDeltaOK = New-Object Windows.Forms.Button
+        $btnDeltaOK.Text = "YA INSTALE EL MODULO DELTA - CONTINUAR"
+        $btnDeltaOK.Location = New-Object System.Drawing.Point(14,416)
+        $btnDeltaOK.Size = New-Object System.Drawing.Size(340,36)
+        $btnDeltaOK.FlatStyle = "Flat"
+        $btnDeltaOK.BackColor = [System.Drawing.Color]::FromArgb(0,120,0)
+        $btnDeltaOK.ForeColor = [System.Drawing.Color]::White
+        $btnDeltaOK.Font = New-Object System.Drawing.Font("Segoe UI",9,[System.Drawing.FontStyle]::Bold)
+        $btnDeltaOK.FlatAppearance.BorderColor = [System.Drawing.Color]::Lime
+        $btnDeltaOK.DialogResult = [System.Windows.Forms.DialogResult]::OK
+        $dlgDelta.Controls.Add($btnDeltaOK)
+
+        $btnDeltaCancel = New-Object Windows.Forms.Button
+        $btnDeltaCancel.Text = "CANCELAR"
+        $btnDeltaCancel.Location = New-Object System.Drawing.Point(366,416)
+        $btnDeltaCancel.Size = New-Object System.Drawing.Size(180,36)
+        $btnDeltaCancel.FlatStyle = "Flat"
+        $btnDeltaCancel.BackColor = [System.Drawing.Color]::FromArgb(80,20,20)
+        $btnDeltaCancel.ForeColor = [System.Drawing.Color]::White
+        $btnDeltaCancel.Font = New-Object System.Drawing.Font("Segoe UI",9,[System.Drawing.FontStyle]::Bold)
+        $btnDeltaCancel.FlatAppearance.BorderColor = [System.Drawing.Color]::OrangeRed
+        $btnDeltaCancel.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
+        $dlgDelta.Controls.Add($btnDeltaCancel)
+        $dlgDelta.AcceptButton = $btnDeltaOK; $dlgDelta.CancelButton = $btnDeltaCancel
+
+        Bypass-Log "[~] Esperando que el usuario instale el modulo Delta..."
+        Bypass-SetStatus $btn "ESPERANDO DELTA..."
+        $resDelta = $dlgDelta.ShowDialog()
+        if ($resDelta -ne [System.Windows.Forms.DialogResult]::OK) {
+            Bypass-Log "[!] Cancelado por el usuario."
+            Bypass-SetStatus $btn "BYPASS BANCARIO"; return
+        }
+        Bypass-Log "[+] Usuario confirmo modulo Delta instalado."
+        Bypass-Log ""
+
+        # --- PASO L4: Instalar Magisk Delta APK ---
+        Bypass-Log "[L4] Instalando Magisk Delta APK..."
+        Bypass-SetStatus $btn "INSTALANDO DELTA APK..."
+        if (-not (Test-Path $apkDelta)) {
+            Bypass-Log "[!] No se encontro magisk_delta.apk en tools\"
+            Bypass-SetStatus $btn "BYPASS BANCARIO"; return
+        }
         Install-Apk $apkDelta "Magisk Delta v27" | Out-Null
         Bypass-Log ""
-        Bypass-Log "[A3] Desinstalando Magisk 24 original..."
-        Bypass-SetStatus $btn "DESINSTALANDO..."
+
+        # --- PASO L5: Desinstalar Magisk 24 original ---
+        Bypass-Log "[L5] Desinstalando Magisk 24 original..."
+        Bypass-SetStatus $btn "DESINSTALANDO MAGISK 24..."
         Uninstall-Pkg "com.topjohnwu.magisk" "Magisk 24" | Out-Null
         Bypass-Log ""
-        Bypass-Log "[A4] Reiniciando para activar Delta..."
+
+        # --- PASO L6: Reiniciar y esperar reconexion ---
+        Bypass-Log "[L6] Reiniciando para activar Magisk Delta..."
+        Bypass-Log "[~]  El programa esperara la reconexion automaticamente..."
         Bypass-SetStatus $btn "REINICIANDO..."
-        & adb reboot 2>$null; Start-Sleep -Seconds 8
+        & adb reboot 2>$null; Start-Sleep -Seconds 10
         [System.Windows.Forms.Application]::DoEvents()
         if (-not (Wait-AdbReconnect 180)) {
-            Bypass-Log "[!] Reconexion fallida. Reconecta manualmente y reintenta."
+            Bypass-Log "[!] Reconexion ADB fallida tras reinicio."
+            Bypass-Log "[~]  Reconecta el cable USB y espera que el equipo arranque completamente."
+            Bypass-Log "[~]  Luego vuelve a presionar BYPASS BANCARIO para continuar."
             Bypass-SetStatus $btn "BYPASS BANCARIO"; return
         }
-        $mInfo=Get-MagiskInfo
-        Bypass-Log "[+] Post-reboot: v$($mInfo.Version) | Delta: $($mInfo.IsDelta)"
-        if (-not $mInfo.IsDelta -and $mInfo.VerNum -lt 25) {
-            Bypass-Log "[!] Delta no activo. Espera y reintenta."
-            Bypass-SetStatus $btn "BYPASS BANCARIO"; return
-        }
-        Bypass-Log "[OK] Migracion a Delta completada"
+        Start-Sleep -Seconds 5
+        [System.Windows.Forms.Application]::DoEvents()
+        $mInfo = Get-MagiskInfo
+        Bypass-Log "[+] Post-reboot: Magisk v$($mInfo.Version) | Delta: $($mInfo.IsDelta) | APK: $(if($mInfo.ApkInstalled){'OK'} else {'NO'})"
+        Bypass-Log "[OK] Migracion Legacy completada: Magisk 24 -> Delta 27"
+        Bypass-Log "[~] Continuando con flujo estandar: modulos + Zygisk + DenyList..."
         Bypass-Log ""
+        # A partir de aqui cae al flujo principal (identico a Magisk 27 estandar)
+        # El flujo principal instala los 3 modulos, activa Zygisk, configura DenyList,
+        # desactiva Zygisk, oculta Magisk y reinicia
+    } elseif ($mInfo.VerNum -lt 25 -and -not $mInfo.IsDelta) {
+        # Legacy detectado pero no en tabla (fallback por version)
+        Bypass-Log "[!] Magisk antiguo detectado y modelo no en tabla legacy."
+        Bypass-Log "[~]  Actualiza Magisk manualmente a v27 y reintenta."
+        Bypass-SetStatus $btn "BYPASS BANCARIO"; return
     }
 
-    # RAMA PRINCIPAL: flujo identico al proceso manual verificado en imagenes
-    # 1. Instalar 3 modulos
-    # 2. Activar Zygisk + DenyList via broadcast (mismo mecanismo que la UI de Magisk)
-    # 3. Agregar apps a DenyList
-    # 4. Desactivar Zygisk (DenyList queda activa aunque aparezca gris)
-    # 5. Reiniciar
+    # RAMA PRINCIPAL: flujo comun para Magisk 27 estandar Y Legacy (post-migracion)
+    # 1. Subir + instalar 3 modulos (Paso_1/2/3.zip)
+    # 2. Activar Zygisk=1 + DenyList=1 en DB
+    # 3. Agregar apps bancarias a DenyList
+    # 4. Shamiko blacklist mode
+    # 5. Desactivar Zygisk (DenyList queda activa)
+    # 6. Ocultar Magisk
+    # 7. Reiniciar
     Bypass-Log "================================================"
-    Bypass-Log "  BYPASS BANCARIO - MODO SEMI-MANUAL"
+    Bypass-Log "  BYPASS BANCARIO - INSTALANDO MODULOS"
+    Bypass-Log "  [Aplica a Magisk 27 y Legacy post-migracion]"
     Bypass-Log "================================================"
     Bypass-Log ""
 
@@ -1946,60 +2217,574 @@ $btnsA2[1].Add_Click({
     }
     Bypass-SetStatus $btn "BYPASS BANCARIO"
 })
+#==========================================================================
+# FIX LOGO SAMSUNG - Galeria interactiva de logos extraidos de up_param
+# Flujo:
+#   1. Verificar ADB + root
+#   2. Extraer particion up_param del dispositivo via dd
+#   3. Parsear JPEGs embebidos y mostrar galeria con checkboxes
+#   4. Usuario elige cual es el logo Samsung original (verde)
+#      y cuales quiere reemplazar (rojo)
+#   5. Clonar el logo original sobre los destinos en el binario
+#   6. Pushear el binario modificado y flashear via dd + root
+#   + Backup automatico antes de cualquier escritura
+#==========================================================================
 $btnsA2[2].Add_Click({
-    # ============================================================
-    # FIX LOGO SAMSUNG - Flashea logo de arranque via ADB/Fastboot
-    # ============================================================
     $btn = $btnsA2[2]
-    $btn.Enabled = $false; $btn.Text = "EJECUTANDO..."
-    [System.Windows.Forms.Application]::DoEvents()
+
+    # -- Estado de sesion: hashtable MUTABLE accesible desde event handlers anidados --
+    # (Los scriptblocks Add_Click/Add_CheckedChanged tienen su propio scope y NO pueden
+    #  modificar variables simples del scope padre. Un hashtable si es mutable por referencia.)
+    $fl = @{
+        sourceID      = $null
+        selectedTargets = [System.Collections.Generic.List[string]]::new()
+        binPath       = $null
+        fixedPath     = $null
+        dumpDir       = $null
+        panels        = [System.Collections.Generic.List[object]]::new()
+    }
+
     $Global:logAdb.Clear()
     AdbLog "=============================================="
     AdbLog "   FIX LOGO SAMSUNG  -  RNX TOOL PRO"
     AdbLog "   $(Get-Date -Format 'dd/MM/yyyy  HH:mm:ss')"
     AdbLog "=============================================="
     AdbLog ""
-    AdbLog "[~] Selecciona la imagen de logo (logo.img / up_param.img)"
-    $fd = New-Object System.Windows.Forms.OpenFileDialog
-    $fd.Filter = "Logo Image (*.img;*.bin)|*.img;*.bin|Todos|*.*"
-    $fd.Title  = "Selecciona logo.img o up_param.img de Samsung"
-    if ($fd.ShowDialog() -ne "OK") {
-        AdbLog "[~] Cancelado."
+
+    # --- VERIFICAR ADB + ROOT ---
+    $adbOut = (& adb devices 2>$null) -join ""
+    if ($adbOut -notmatch "`tdevice") {
+        AdbLog "[!] No hay dispositivo ADB conectado."
+        AdbLog "    Conecta el equipo con Depuracion USB habilitada."
+        return
+    }
+    $model  = (& adb shell getprop ro.product.model  2>$null).Trim()
+    $serial = (& adb get-serialno 2>$null).Trim()
+    AdbLog "[+] Dispositivo : $model  ($serial)"
+
+    AdbLog "[~] Verificando root..."
+    $rootCheck = (& adb shell "su -c id" 2>$null) -join ""
+    if ($rootCheck -notmatch "uid=0") {
+        AdbLog "[!] ROOT no detectado. Fix Logo requiere acceso root."
+        AdbLog "    Instala Magisk y otorga permisos root al proceso ADB."
+        return
+    }
+    AdbLog "[+] Root: OK"
+    AdbLog ""
+
+    # --- ADVERTENCIA ANTES DE PROCEDER ---
+    $warn = [System.Windows.Forms.MessageBox]::Show(
+        "FIX LOGO SAMSUNG - Advertencia`n`n" +
+        "Esta operacion modifica directamente la particion up_param`n" +
+        "del almacenamiento interno del dispositivo.`n`n" +
+        "Se creara un backup automatico antes de cualquier escritura.`n`n" +
+        "REQUISITOS:`n" +
+        "  - Root (Magisk) activo`n" +
+        "  - Dispositivo Samsung con particion up_param`n" +
+        "  - Bateria >= 30%`n`n" +
+        "Continuar?",
+        "FIX LOGO SAMSUNG",
+        [System.Windows.Forms.MessageBoxButtons]::YesNo,
+        [System.Windows.Forms.MessageBoxIcon]::Warning)
+    if ($warn -ne "Yes") { AdbLog "[~] Cancelado por el usuario."; return }
+
+    $btn.Enabled = $false; $btn.Text = "EXTRAYENDO..."
+    [System.Windows.Forms.Application]::DoEvents()
+
+    # --- PREPARAR CARPETAS ---
+    $stamp      = Get-Date -Format "yyyy-MM-dd_HH-mm-ss"
+    $workDir    = [System.IO.Path]::Combine($script:SCRIPT_ROOT, "BACKUPS", "FIX_LOGO", $stamp)
+    $fl.dumpDir   = [System.IO.Path]::Combine($workDir, "img_dump")
+    New-Item $workDir        -ItemType Directory -Force | Out-Null
+    New-Item $fl.dumpDir     -ItemType Directory -Force | Out-Null
+
+    $fl.binPath   = [System.IO.Path]::Combine($workDir, "up_param_backup.bin")
+    $fl.fixedPath = [System.IO.Path]::Combine($workDir, "up_param_fixed.bin")
+
+    # --- PASO 1: EXTRAER up_param via dd + adb pull ---
+    AdbLog "[1] Extrayendo particion up_param del dispositivo..."
+    AdbLog "[~] Buscando ruta de la particion..."
+
+    # Buscar la particion (puede llamarse up_param o logo segun modelo)
+    $partPath = ""
+    foreach ($pname in @("up_param","UP_PARAM","logo","LOGO")) {
+        $found = (& adb shell "su -c 'ls /dev/block/by-name/$pname 2>/dev/null'" 2>$null) -join ""
+        if ($found -imatch $pname) { $partPath = "/dev/block/by-name/$pname"; break }
+    }
+    if (-not $partPath) {
+        # Fallback: buscar via find
+        $found2 = (& adb shell "su -c 'find /dev/block/platform -name up_param 2>/dev/null || find /dev/block/platform -name logo 2>/dev/null'" 2>$null) -join ""
+        if ($found2.Trim()) { $partPath = $found2.Trim().Split("`n")[0].Trim() }
+    }
+    if (-not $partPath) {
+        AdbLog "[!] No se encontro la particion up_param/logo."
+        AdbLog "    Este modelo puede no tener logo editable, o requiere un nombre diferente."
         $btn.Enabled = $true; $btn.Text = "FIX LOGO SAMSUNG"; return
     }
-    $imgPath = $fd.FileName
-    $imgName = [System.IO.Path]::GetFileName($imgPath)
-    AdbLog "[+] Archivo : $imgName"
-    AdbLog ""
-    $fbExe  = Get-FastbootExe
-    $fbOut  = if ($fbExe) { (& $fbExe devices 2>$null) -join "" } else { "" }
-    $adbOut = (& adb devices 2>$null) -join ""
-    if ($fbOut -imatch "\tfastboot") {
-        AdbLog "[+] Modo Fastboot detectado"
-        AdbLog "[~] Flasheando logo via fastboot..."
-        try {
-            $ec = Invoke-FastbootLive "flash logo `"$imgPath`""
-            if ($ec -eq 0) { AdbLog ""; AdbLog "[OK] Logo flasheado correctamente via Fastboot." }
-            else { AdbLog "[!] Flash termino con codigo: $ec" }
-        } catch { AdbLog "[!] Error: $_" }
-    } elseif ($adbOut -imatch "`tdevice") {
-        AdbLog "[+] Modo ADB detectado"
-        AdbLog "[~] Copiando imagen al dispositivo..."
-        try {
-            & adb push "$imgPath" "/sdcard/logo_rnx.img" 2>$null | Out-Null
-            AdbLog "[+] Imagen copiada a /sdcard/logo_rnx.img"
-            AdbLog "[~] Reiniciando a fastboot para flashear..."
-            & adb reboot bootloader 2>$null
-            AdbLog "[~] Esperando modo Fastboot (12s)..."
-            Start-Sleep -Seconds 12; [System.Windows.Forms.Application]::DoEvents()
-            $ec2 = Invoke-FastbootLive "flash logo /sdcard/logo_rnx.img"
-            if ($ec2 -eq 0) { AdbLog ""; AdbLog "[OK] Logo flasheado correctamente." }
-            else { AdbLog "[!] Fallo el flash (cod: $ec2)" }
-        } catch { AdbLog "[!] Error: $_" }
-    } else {
-        AdbLog "[!] No se detecta dispositivo ADB ni Fastboot."
-        AdbLog "    Conecta el equipo y reintenta."
+    AdbLog "[+] Particion : $partPath"
+
+    AdbLog "[~] Extrayendo (dd)... puede tardar 10-30 segundos..."
+    [System.Windows.Forms.Application]::DoEvents()
+    & adb shell "su -c 'dd if=$partPath of=/sdcard/rnx_up_param.bin bs=4096 2>/dev/null'" 2>$null | Out-Null
+
+    AdbLog "[~] Descargando al PC (adb pull)..."
+    & adb pull /sdcard/rnx_up_param.bin $fl.binPath 2>$null | Out-Null
+    & adb shell "su -c 'rm -f /sdcard/rnx_up_param.bin'" 2>$null | Out-Null
+
+    if (-not (Test-Path $fl.binPath) -or (Get-Item $fl.binPath).Length -lt 1024) {
+        AdbLog "[!] Error: no se pudo descargar up_param o el archivo esta vacio."
+        AdbLog "    Verifica que el dispositivo tenga la particion accesible con root."
+        $btn.Enabled = $true; $btn.Text = "FIX LOGO SAMSUNG"; return
     }
+    $binSz = [math]::Round((Get-Item $fl.binPath).Length / 1KB, 1)
+    AdbLog "[+] Backup guardado: $($fl.binPath) ($binSz KB)"
+    AdbLog ""
+
+    # --- PASO 2: PARSEAR JPEGs EMBEBIDOS ---
+    AdbLog "[2] Parseando logos JPEG embebidos..."
+    $bin = [System.IO.File]::ReadAllBytes($fl.binPath)
+    $jpegCount = 0
+    $jpegFiles = @()
+
+    for ($i = 0; $i -lt ($bin.Length - 3); $i++) {
+        if ($bin[$i] -eq 0xFF -and $bin[$i+1] -eq 0xD8 -and $bin[$i+2] -eq 0xFF) {
+            $jpegStart = $i
+            $jpegEnd   = $bin.Length
+            for ($j = $i + 2; $j -lt ($bin.Length - 1); $j++) {
+                if ($bin[$j] -eq 0xFF -and $bin[$j+1] -eq 0xD9) { $jpegEnd = $j + 2; break }
+            }
+            $jpegCount++
+            $chunk = New-Object byte[] ($jpegEnd - $jpegStart)
+            [Array]::Copy($bin, $jpegStart, $chunk, 0, ($jpegEnd - $jpegStart))
+            $outJpeg = [System.IO.Path]::Combine($($fl.dumpDir), "img_${jpegCount}.jpg")
+            [System.IO.File]::WriteAllBytes($outJpeg, $chunk)
+            $jpegFiles += [PSCustomObject]@{ Id=$jpegCount; Path=$outJpeg; Start=$jpegStart; End=$jpegEnd; Size=($jpegEnd-$jpegStart) }
+            $i = $jpegEnd - 1  # saltar al siguiente
+        }
+    }
+
+    AdbLog "[+] Logos encontrados: $jpegCount"
+    AdbLog ""
+
+    if ($jpegCount -eq 0) {
+        AdbLog "[!] No se encontraron imagenes JPEG en up_param."
+        AdbLog "    El archivo puede estar en formato diferente o estar vacio."
+        $btn.Enabled = $true; $btn.Text = "FIX LOGO SAMSUNG"; return
+    }
+
+    $btn.Text = "GALERIA ABIERTA"
+    [System.Windows.Forms.Application]::DoEvents()
+
+    # ===================================================================
+    # GALERIA INTERACTIVA - ventana modal estilo RNX
+    # ===================================================================
+    $pop = New-Object Windows.Forms.Form
+    $pop.Text            = "RNX TOOL PRO  -  FIX LOGO SAMSUNG  -  GALERIA DE LOGOS"
+    $pop.ClientSize      = New-Object System.Drawing.Size(920, 700)
+    $pop.BackColor       = [System.Drawing.Color]::FromArgb(18, 18, 18)
+    $pop.FormBorderStyle = "FixedDialog"
+    $pop.StartPosition   = "CenterScreen"
+    $pop.MaximizeBox     = $false
+    $pop.TopMost         = $true
+
+    # -- Barra de instrucciones superior --
+    $pnlInstr = New-Object Windows.Forms.Panel
+    $pnlInstr.Location  = New-Object System.Drawing.Point(0, 0)
+    $pnlInstr.Size      = New-Object System.Drawing.Size(920, 72)
+    $pnlInstr.BackColor = [System.Drawing.Color]::FromArgb(28, 28, 28)
+    $pop.Controls.Add($pnlInstr)
+
+    # Linea decorativa superior
+    $lineTop = New-Object Windows.Forms.Panel
+    $lineTop.Location  = New-Object System.Drawing.Point(0, 0)
+    $lineTop.Size      = New-Object System.Drawing.Size(920, 2)
+    $lineTop.BackColor = [System.Drawing.Color]::FromArgb(0, 188, 212)
+    $pnlInstr.Controls.Add($lineTop)
+
+    $lblPaso1 = New-Object Windows.Forms.Label
+    $lblPaso1.Text      = "  PASO 1  ->  Haz clic sobre la imagen del Logo Samsung original (se pondra VERDE)"
+    $lblPaso1.Location  = New-Object System.Drawing.Point(0, 8)
+    $lblPaso1.Size      = New-Object System.Drawing.Size(920, 26)
+    $lblPaso1.ForeColor = [System.Drawing.Color]::FromArgb(0, 230, 120)
+    $lblPaso1.Font      = New-Object System.Drawing.Font("Segoe UI", 9.5, [System.Drawing.FontStyle]::Bold)
+    $pnlInstr.Controls.Add($lblPaso1)
+
+    $lblPaso2 = New-Object Windows.Forms.Label
+    $lblPaso2.Text      = "  PASO 2  ->  Marca el checkbox de los logos que quieres REEMPLAZAR (se pondran ROJO)"
+    $lblPaso2.Location  = New-Object System.Drawing.Point(0, 38)
+    $lblPaso2.Size      = New-Object System.Drawing.Size(920, 26)
+    $lblPaso2.ForeColor = [System.Drawing.Color]::FromArgb(255, 80, 80)
+    $lblPaso2.Font      = New-Object System.Drawing.Font("Segoe UI", 9.5, [System.Drawing.FontStyle]::Bold)
+    $pnlInstr.Controls.Add($lblPaso2)
+
+    # Linea decorativa inferior del header
+    $lineHdr = New-Object Windows.Forms.Panel
+    $lineHdr.Location  = New-Object System.Drawing.Point(0, 70)
+    $lineHdr.Size      = New-Object System.Drawing.Size(920, 2)
+    $lineHdr.BackColor = [System.Drawing.Color]::FromArgb(50, 50, 50)
+    $pnlInstr.Controls.Add($lineHdr)
+
+    # -- FlowLayoutPanel con scroll para las tarjetas --
+    $flGallery = New-Object Windows.Forms.FlowLayoutPanel
+    $flGallery.Location   = New-Object System.Drawing.Point(0, 72)
+    $flGallery.Size       = New-Object System.Drawing.Size(920, 560)
+    $flGallery.AutoScroll = $true
+    $flGallery.BackColor  = [System.Drawing.Color]::FromArgb(22, 22, 22)
+    $flGallery.Padding    = New-Object Windows.Forms.Padding(12)
+    $flGallery.WrapContents = $true
+    $pop.Controls.Add($flGallery)
+
+    # -- Barra inferior: contador + boton confirmar --
+    $pnlBottom = New-Object Windows.Forms.Panel
+    $pnlBottom.Location  = New-Object System.Drawing.Point(0, 632)
+    $pnlBottom.Size      = New-Object System.Drawing.Size(920, 68)
+    $pnlBottom.BackColor = [System.Drawing.Color]::FromArgb(28, 28, 28)
+    $pop.Controls.Add($pnlBottom)
+
+    $lineBot = New-Object Windows.Forms.Panel
+    $lineBot.Location  = New-Object System.Drawing.Point(0, 0)
+    $lineBot.Size      = New-Object System.Drawing.Size(920, 1)
+    $lineBot.BackColor = [System.Drawing.Color]::FromArgb(50, 50, 50)
+    $pnlBottom.Controls.Add($lineBot)
+
+    $lblStatus = New-Object Windows.Forms.Label
+    $lblStatus.Text      = "Sin seleccion  |  $jpegCount logos encontrados"
+    $lblStatus.Location  = New-Object System.Drawing.Point(14, 10)
+    $lblStatus.Size      = New-Object System.Drawing.Size(480, 50)
+    $lblStatus.ForeColor = [System.Drawing.Color]::FromArgb(140, 140, 140)
+    $lblStatus.Font      = New-Object System.Drawing.Font("Segoe UI", 8.5)
+    $pnlBottom.Controls.Add($lblStatus)
+
+    $btnConfirm = New-Object Windows.Forms.Button
+    $btnConfirm.Text     = "CONFIRMAR SELECCION Y APLICAR"
+    $btnConfirm.Location = New-Object System.Drawing.Point(560, 12)
+    $btnConfirm.Size     = New-Object System.Drawing.Size(344, 44)
+    $btnConfirm.FlatStyle = "Flat"
+    $btnConfirm.BackColor = [System.Drawing.Color]::FromArgb(20, 20, 20)
+    $btnConfirm.ForeColor = [System.Drawing.Color]::FromArgb(100, 100, 100)
+    $btnConfirm.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(60, 60, 60)
+    $btnConfirm.Font     = New-Object System.Drawing.Font("Segoe UI", 9.5, [System.Drawing.FontStyle]::Bold)
+    $btnConfirm.Enabled  = $false
+    $pnlBottom.Controls.Add($btnConfirm)
+
+    # -- Funcion de actualizacion del estado y boton confirmar --
+    $updateStatus = {
+        $srcOk  = ($fl.sourceID -ne $null)
+        $dstCnt = $fl.selectedTargets.Count
+        if ($srcOk -and $dstCnt -gt 0) {
+            $lblStatus.Text      = "Logo origen: ID $($fl.sourceID)  |  Destinos a reemplazar: $dstCnt"
+            $lblStatus.ForeColor = [System.Drawing.Color]::FromArgb(0, 220, 100)
+            $btnConfirm.Enabled  = $true
+            $btnConfirm.BackColor = [System.Drawing.Color]::FromArgb(10, 100, 10)
+            $btnConfirm.ForeColor = [System.Drawing.Color]::White
+            $btnConfirm.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(0, 200, 80)
+        } elseif ($srcOk) {
+            $lblStatus.Text      = "Logo origen: ID $($fl.sourceID)  |  Selecciona logos a reemplazar (PASO 2)"
+            $lblStatus.ForeColor = [System.Drawing.Color]::FromArgb(0, 188, 212)
+            $btnConfirm.Enabled  = $false
+            $btnConfirm.BackColor = [System.Drawing.Color]::FromArgb(20, 20, 20)
+            $btnConfirm.ForeColor = [System.Drawing.Color]::FromArgb(100, 100, 100)
+            $btnConfirm.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(60, 60, 60)
+        } else {
+            $lblStatus.Text      = "Sin seleccion  |  $jpegCount logos encontrados  -  Haz clic en el logo original (PASO 1)"
+            $lblStatus.ForeColor = [System.Drawing.Color]::FromArgb(140, 140, 140)
+            $btnConfirm.Enabled  = $false
+        }
+    }
+
+    # -- Crear tarjeta por cada JPEG --
+    $fl.panels = [System.Collections.Generic.List[object]]::new()
+    foreach ($jpeg in $jpegFiles) {
+        $jId = $jpeg.Id
+
+        try {
+            $jBytes = [System.IO.File]::ReadAllBytes($jpeg.Path)
+            $jMs    = New-Object System.IO.MemoryStream(,$jBytes)
+            $jImg   = [System.Drawing.Image]::FromStream($jMs)
+
+            # Tarjeta contenedor
+            $card = New-Object Windows.Forms.Panel
+            $card.Size        = New-Object System.Drawing.Size(190, 248)
+            $card.Tag         = $jId
+            $card.BackColor   = [System.Drawing.Color]::FromArgb(32, 32, 32)
+            $card.BorderStyle = "FixedSingle"
+            $card.Margin      = New-Object Windows.Forms.Padding(8)
+            $card.Cursor      = "Default"
+
+            # Etiqueta del numero de imagen
+            $lblId = New-Object Windows.Forms.Label
+            $lblId.Text      = "LOGO  #$jId"
+            $lblId.Location  = New-Object System.Drawing.Point(0, 4)
+            $lblId.Size      = New-Object System.Drawing.Size(188, 18)
+            $lblId.ForeColor = [System.Drawing.Color]::FromArgb(100, 100, 100)
+            $lblId.Font      = New-Object System.Drawing.Font("Segoe UI", 7.5, [System.Drawing.FontStyle]::Bold)
+            $lblId.TextAlign = "MiddleCenter"
+            $card.Controls.Add($lblId)
+
+            # Imagen
+            $pb = New-Object Windows.Forms.PictureBox
+            $pb.Size     = New-Object System.Drawing.Size(170, 168)
+            $pb.Location = New-Object System.Drawing.Point(10, 24)
+            $pb.SizeMode = [System.Windows.Forms.PictureBoxSizeMode]::Zoom
+            $pb.Image    = $jImg
+            $pb.BackColor = [System.Drawing.Color]::FromArgb(12, 12, 12)
+            $pb.Cursor   = [System.Windows.Forms.Cursors]::Hand
+            $pb.Tag      = $jId
+            $card.Controls.Add($pb)
+
+            # Separador entre imagen y checkbox
+            $sep = New-Object Windows.Forms.Panel
+            $sep.Location  = New-Object System.Drawing.Point(10, 196)
+            $sep.Size      = New-Object System.Drawing.Size(170, 1)
+            $sep.BackColor = [System.Drawing.Color]::FromArgb(50, 50, 50)
+            $card.Controls.Add($sep)
+
+            # Checkbox "REEMPLAZAR ESTE"
+            $ck = New-Object Windows.Forms.CheckBox
+            $ck.Text      = "REEMPLAZAR ESTE"
+            $ck.Location  = New-Object System.Drawing.Point(0, 200)
+            $ck.Size      = New-Object System.Drawing.Size(188, 40)
+            $ck.ForeColor = [System.Drawing.Color]::FromArgb(160, 160, 160)
+            $ck.Font      = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+            $ck.TextAlign = "MiddleCenter"
+            $ck.Tag       = $jId
+            $ck.BackColor = [System.Drawing.Color]::Transparent
+            $card.Controls.Add($ck)
+
+            # --- CLICK en la imagen: seleccionar como LOGO ORIGINAL (verde) ---
+            $pb.Add_Click({
+                param($sender, $e)
+                $clickedId = $sender.Tag
+
+                # Quitar verde de todas las tarjetas que no esten en rojo
+                foreach ($pn in $fl.panels) {
+                    $pnCk = $pn.Controls | Where-Object { $_ -is [System.Windows.Forms.CheckBox] }
+                    $pnLbl = $pn.Controls | Where-Object { $_ -is [System.Windows.Forms.Label] -and $_.Font.Size -lt 8 }
+                    if (-not $pnCk.Checked) {
+                        $pn.BackColor   = [System.Drawing.Color]::FromArgb(32, 32, 32)
+                        $pnLbl.ForeColor = [System.Drawing.Color]::FromArgb(100, 100, 100)
+                    }
+                }
+
+                # Marcar la tarjeta clickeada como origen (verde)
+                $sender.Parent.BackColor = [System.Drawing.Color]::FromArgb(10, 80, 10)
+                $lbl = $sender.Parent.Controls | Where-Object { $_ -is [System.Windows.Forms.Label] -and $_.Font.Size -lt 8 }
+                $lbl.ForeColor = [System.Drawing.Color]::FromArgb(0, 230, 120)
+                $fl.sourceID = $clickedId
+
+                & $updateStatus
+            })
+
+            # --- CHECKED: marcar como destino a REEMPLAZAR (rojo) ---
+            $ck.Add_CheckedChanged({
+                param($sender, $e)
+                $ckId = $sender.Tag
+                $lbl  = $sender.Parent.Controls | Where-Object { $_ -is [System.Windows.Forms.Label] -and $_.Font.Size -lt 8 }
+
+                if ($sender.Checked) {
+                    $sender.Parent.BackColor = [System.Drawing.Color]::FromArgb(80, 10, 10)
+                    $sender.ForeColor        = [System.Drawing.Color]::FromArgb(255, 100, 100)
+                    $lbl.ForeColor           = [System.Drawing.Color]::FromArgb(255, 100, 100)
+                    if ($fl.selectedTargets -notcontains $ckId) {
+                        $fl.selectedTargets.Add($ckId)
+                    }
+                } else {
+                    # Restaurar color segun si es el origen o neutro
+                    if ($ckId -eq $fl.sourceID) {
+                        $sender.Parent.BackColor = [System.Drawing.Color]::FromArgb(10, 80, 10)
+                        $lbl.ForeColor           = [System.Drawing.Color]::FromArgb(0, 230, 120)
+                    } else {
+                        $sender.Parent.BackColor = [System.Drawing.Color]::FromArgb(32, 32, 32)
+                        $lbl.ForeColor           = [System.Drawing.Color]::FromArgb(100, 100, 100)
+                    }
+                    $sender.ForeColor = [System.Drawing.Color]::FromArgb(160, 160, 160)
+                    $fl.selectedTargets.Remove($ckId) | Out-Null
+                }
+                & $updateStatus
+            })
+
+            $flGallery.Controls.Add($card)
+            $fl.panels.Add($card)
+
+        } catch {
+            AdbLog "[~] No se pudo cargar img_${jId}.jpg: $_"
+        }
+    }
+
+    # --- BOTON CONFIRMAR ---
+    $btnConfirm.Add_Click({
+        if (-not $fl.sourceID) {
+            [System.Windows.Forms.MessageBox]::Show(
+                "Debes hacer clic sobre la imagen del logo Samsung original (PASO 1) antes de continuar.",
+                "Sin logo origen",
+                [System.Windows.Forms.MessageBoxButtons]::OK,
+                [System.Windows.Forms.MessageBoxIcon]::Warning) | Out-Null
+            return
+        }
+        if ($fl.selectedTargets.Count -eq 0) {
+            [System.Windows.Forms.MessageBox]::Show(
+                "No hay logos marcados para reemplazar (PASO 2).`nMarca al menos uno con el checkbox.",
+                "Sin destinos",
+                [System.Windows.Forms.MessageBoxButtons]::OK,
+                [System.Windows.Forms.MessageBoxIcon]::Warning) | Out-Null
+            return
+        }
+        $pop.DialogResult = [System.Windows.Forms.DialogResult]::OK
+        $pop.Close()
+    })
+
+    $popResult = $pop.ShowDialog()
+
+    # Si cerro sin confirmar
+    if ($popResult -ne [System.Windows.Forms.DialogResult]::OK -or -not $fl.sourceID) {
+        AdbLog "[~] Galeria cerrada sin confirmar."
+        $btn.Enabled = $true; $btn.Text = "FIX LOGO SAMSUNG"; return
+    }
+
+    AdbLog "[+] Seleccion confirmada:"
+    AdbLog "    Logo origen (Samsung): ID $($fl.sourceID)"
+    AdbLog "    Logos a reemplazar   : $($fl.selectedTargets -join ', ')"
+    AdbLog ""
+
+    # --- PASO 3: CLONAR LOGO ORIGEN SOBRE DESTINOS ---
+    AdbLog "[3] Procesando binario..."
+    $btn.Text = "PROCESANDO..."; [System.Windows.Forms.Application]::DoEvents()
+
+    # Recargar el binario original
+    $bin2 = [System.IO.File]::ReadAllBytes($fl.binPath)
+
+    # Extraer bytes del logo origen
+    $logoBytes = $null
+    $cnt = 0
+    for ($i = 0; $i -lt ($bin2.Length - 3); $i++) {
+        if ($bin2[$i] -eq 0xFF -and $bin2[$i+1] -eq 0xD8 -and $bin2[$i+2] -eq 0xFF) {
+            $cnt++
+            $jStart = $i; $jEnd = $bin2.Length
+            for ($j = $i+2; $j -lt ($bin2.Length-1); $j++) {
+                if ($bin2[$j] -eq 0xFF -and $bin2[$j+1] -eq 0xD9) { $jEnd = $j+2; break }
+            }
+            if ($cnt.ToString() -eq $fl.sourceID.ToString()) {
+                $logoBytes = New-Object byte[] ($jEnd - $jStart)
+                [Array]::Copy($bin2, $jStart, $logoBytes, 0, ($jEnd - $jStart))
+                AdbLog "[+] Logo origen extraido: $($logoBytes.Length) bytes (ID $($fl.sourceID))"
+                break
+            }
+            $i = $jEnd - 1
+        }
+    }
+
+    if (-not $logoBytes) {
+        AdbLog "[!] No se pudo extraer el logo origen del binario."
+        $btn.Enabled = $true; $btn.Text = "FIX LOGO SAMSUNG"; return
+    }
+
+    # Reemplazar logos destino en el binario
+    $cnt = 0; $replaced = 0
+    for ($i = 0; $i -lt ($bin2.Length - 3); $i++) {
+        if ($bin2[$i] -eq 0xFF -and $bin2[$i+1] -eq 0xD8 -and $bin2[$i+2] -eq 0xFF) {
+            $cnt++
+            $jStart = $i; $jEnd = $bin2.Length
+            for ($j = $i+2; $j -lt ($bin2.Length-1); $j++) {
+                if ($bin2[$j] -eq 0xFF -and $bin2[$j+1] -eq 0xD9) { $jEnd = $j+2; break }
+            }
+            if ($fl.selectedTargets -contains $cnt.ToString()) {
+                $space = $jEnd - $jStart
+                if ($logoBytes.Length -le $space) {
+                    # Limpiar el espacio original con ceros
+                    for ($k = $jStart; $k -lt $jEnd; $k++) { $bin2[$k] = 0 }
+                    # Escribir el logo origen en su lugar
+                    [Array]::Copy($logoBytes, 0, $bin2, $jStart, $logoBytes.Length)
+                    AdbLog "[+] ID $cnt reemplazado OK  (espacio: $space B  logo: $($logoBytes.Length) B)"
+                    $replaced++
+                } else {
+                    AdbLog "[!] ID $cnt NO reemplazado - logo origen ($($logoBytes.Length) B) > espacio disponible ($space B)"
+                }
+            }
+            $i = $jEnd - 1
+        }
+    }
+
+    if ($replaced -eq 0) {
+        AdbLog "[!] Ningun logo fue reemplazado (problema de espacio o IDs invalidos)."
+        $btn.Enabled = $true; $btn.Text = "FIX LOGO SAMSUNG"; return
+    }
+    AdbLog "[+] $replaced logo(s) reemplazado(s) correctamente"
+
+    # Guardar binario modificado
+    [System.IO.File]::WriteAllBytes($fl.fixedPath, $bin2)
+    $fixSz = [math]::Round((Get-Item $fl.fixedPath).Length / 1KB, 1)
+    AdbLog "[+] Binario modificado guardado: $($fl.fixedPath) ($fixSz KB)"
+    AdbLog ""
+
+    # --- PASO 4: FLASHEAR AL DISPOSITIVO ---
+    AdbLog "[4] Flasheando up_param modificado al dispositivo..."
+    $btn.Text = "FLASHEANDO..."; [System.Windows.Forms.Application]::DoEvents()
+
+    $confirm2 = [System.Windows.Forms.MessageBox]::Show(
+        "Listo para flashear $replaced logo(s) modificado(s).`n`n" +
+        "Backup guardado en:`n$($fl.binPath)`n`n" +
+        "Se escribira via: dd if=up_param_fixed.bin of=$partPath`n`n" +
+        "Confirmas la escritura al dispositivo?",
+        "CONFIRMAR FLASH",
+        [System.Windows.Forms.MessageBoxButtons]::YesNo,
+        [System.Windows.Forms.MessageBoxIcon]::Warning)
+
+    if ($confirm2 -ne "Yes") {
+        AdbLog "[~] Flash cancelado por el usuario."
+        AdbLog "[~] El binario modificado esta guardado en:"
+        AdbLog "    $($fl.fixedPath)"
+        AdbLog "[~] Puedes flashearlo manualmente con:"
+        AdbLog "    adb push up_param_fixed.bin /sdcard/up_fixed.bin"
+        AdbLog "    adb shell su -c 'dd if=/sdcard/up_fixed.bin of=$partPath'"
+        $btn.Enabled = $true; $btn.Text = "FIX LOGO SAMSUNG"; return
+    }
+
+    # Push al dispositivo
+    AdbLog "[~] Subiendo binario al dispositivo..."
+    & adb push $fl.fixedPath /sdcard/rnx_up_fixed.bin 2>$null | Out-Null
+
+    $pushCheck = (& adb shell "ls /sdcard/rnx_up_fixed.bin 2>/dev/null" 2>$null) -join ""
+    if ($pushCheck -notmatch "rnx_up_fixed") {
+        AdbLog "[!] Error: no se pudo subir el binario al dispositivo."
+        $btn.Enabled = $true; $btn.Text = "FIX LOGO SAMSUNG"; return
+    }
+    AdbLog "[+] Binario subido al dispositivo"
+
+    # Flashear via dd con root
+    AdbLog "[~] Ejecutando dd (escritura a particion)..."
+    $ddOut = (& adb shell "su -c 'dd if=/sdcard/rnx_up_fixed.bin of=$partPath bs=4096 conv=fsync 2>&1'" 2>$null) -join "`n"
+    foreach ($dl in ($ddOut -split "`n")) { $dl = $dl.Trim(); if ($dl) { AdbLog "    $dl" } }
+
+    # Limpiar archivo temporal del dispositivo
+    & adb shell "su -c 'rm -f /sdcard/rnx_up_fixed.bin'" 2>$null | Out-Null
+
+    AdbLog ""
+    if ($ddOut -imatch "records out|bytes|copied") {
+        AdbLog "[OK] ============================================"
+        AdbLog "[OK]   FIX LOGO SAMSUNG COMPLETADO"
+        AdbLog "[OK] ============================================"
+        AdbLog "[~] $replaced logo(s) modificado(s) correctamente."
+        AdbLog "[~] Reiniciando dispositivo para ver los cambios..."
+        AdbLog ""
+        AdbLog "[~] Backup del original en:"
+        AdbLog "    $($fl.binPath)"
+        $Global:lblStatus.Text = "  RNX TOOL PRO v2.3  |  FIX LOGO OK  |  $model"
+
+        $reboot = [System.Windows.Forms.MessageBox]::Show(
+            "Logo flasheado correctamente.`n`nReinicia el dispositivo para ver los cambios de logo en el arranque.`n`nReiniciar ahora?",
+            "FIX LOGO OK",
+            [System.Windows.Forms.MessageBoxButtons]::YesNo,
+            [System.Windows.Forms.MessageBoxIcon]::Information)
+        if ($reboot -eq "Yes") {
+            AdbLog "[~] Reiniciando..."
+            & adb reboot 2>$null
+        }
+    } else {
+        AdbLog "[!] El dd no confirmo escritura. Verifica manualmente."
+        AdbLog "[~] El binario modificado esta guardado localmente:"
+        AdbLog "    $($fl.fixedPath)"
+    }
+
     $btn.Enabled = $true; $btn.Text = "FIX LOGO SAMSUNG"
 })
 #==========================================================================
@@ -2096,11 +2881,11 @@ $btnsA2[3].Add_Click({
     } catch { AdbLog "[!] Error inesperado: $_" }
     finally { $btn.Enabled = $true; $btn.Text = "ACTIVAR SIM 2 SAMSUNG" }
 })
-$btnsA3[0].Add_Click({
+$btnsA1[2].Add_Click({
     # ============================================================
     # BLOQUEAR OTA - version estable sin contaminacion de scope
     # ============================================================
-    $btn = $btnsA3[0]
+    $btn = $btnsA1[2]
     $btn.Enabled = $false
     $btn.Text    = "BLOQUEANDO OTA..."
     [System.Windows.Forms.Application]::DoEvents()
@@ -2437,11 +3222,11 @@ $btnsA3[0].Add_Click({
     $btn.Text    = "BLOQUEAR OTA"
 })
 
-$btnsA3[1].Add_Click({
+$btnsA1[3].Add_Click({
     # ============================================================
     # REMOVER ADWARE v2 - escaner permisos, buscador, whitelist, turbo
     # ============================================================
-    $btn = $btnsA3[1]
+    $btn = $btnsA1[3]
     $btn.Enabled = $false; $btn.Text = "ANALIZANDO..."
     [System.Windows.Forms.Application]::DoEvents()
 
@@ -2458,28 +3243,120 @@ $btnsA3[1].Add_Click({
     try { $model  = (& adb shell getprop ro.product.model 2>$null).Trim() } catch {}
     try { $serial = (& adb get-serialno 2>$null).Trim() } catch {}
 
-    # ---- WHITELIST: paquetes del sistema que NUNCA se marcan ni borran ----
+    # ============================================================
+    # WHITELIST TOTAL: paquetes que se EXCLUYEN del scanner
+    # (nunca aparecen en la lista, ni siquiera para mostrar)
+    # ============================================================
     $sysWhitelist = [System.Collections.Generic.HashSet[string]]::new(
         [string[]]@(
-            "com.google.android.gms","com.google.android.gsf","com.google.android.googlequicksearchbox",
-            "com.google.android.apps.photos","com.google.android.youtube","com.google.android.apps.maps",
-            "com.google.android.inputmethod.latin","com.google.android.tts","com.google.android.webview",
+            # Android core
+            "android","com.android.settings","com.android.systemui","com.android.phone",
+            "com.android.server.telecom","com.android.providers.telephony",
+            "com.android.providers.contacts","com.android.providers.media",
+            "com.android.providers.downloads","com.android.launcher3",
+            "com.android.inputmethod.latin","com.android.packageinstaller",
+            "com.android.permissioncontroller","com.android.shell",
+            "com.android.vpndialogs","com.android.nfc","com.android.bluetooth",
+            # Google core (no tocar JAMAS)
+            "com.google.android.gms","com.google.android.gsf",
+            "com.google.android.googlequicksearchbox","com.google.android.webview",
             "com.google.android.packageinstaller","com.google.android.permissioncontroller",
-            "com.google.android.play.games","com.google.android.gmscore",
-            "com.google.android.syncadapters.contacts",
-            "com.samsung.android.contacts","com.samsung.android.messaging","com.samsung.android.dialer",
-            "com.samsung.android.app.galaxystore","com.samsung.android.lool",
-            "com.samsung.android.mobileservice","com.samsung.android.providers.contacts",
-            "com.samsung.android.app.clockpackage","com.samsung.android.app.notes",
-            "com.samsung.android.calendar","com.samsung.android.incallui",
-            "com.samsung.android.app.smartcapture","com.samsung.android.app.spage",
-            "com.samsung.android.app.settings.bixby","com.samsung.android.knox.containeragent",
-            "com.android.settings","com.android.systemui","com.android.phone",
-            "com.android.providers.telephony","com.android.providers.contacts",
-            "com.android.providers.media","com.android.providers.downloads",
-            "com.android.launcher3","com.android.inputmethod.latin",
-            "com.android.packageinstaller","com.android.permissioncontroller",
-            "android","com.android.server.telecom"
+            "com.google.android.gmscore","com.google.android.syncadapters.contacts",
+            "com.google.android.tts","com.google.android.inputmethod.latin"
+        ),
+        [System.StringComparer]::OrdinalIgnoreCase
+    )
+
+    # ============================================================
+    # LISTA PROTEGIDA: apps conocidas y legitimas que SE MUESTRAN
+    # pero con etiqueta [OK] en verde y NO seleccionadas por defecto.
+    # El usuario puede marcarlas manualmente si lo desea.
+    # Organizadas por categoria para facil mantenimiento.
+    # ============================================================
+    $knownSafeList = [System.Collections.Generic.HashSet[string]]::new(
+        [string[]]@(
+            # --- Google apps de usuario ---
+            "com.google.android.youtube","com.google.android.apps.maps",
+            "com.google.android.apps.photos","com.google.android.play.games",
+            "com.google.android.talk","com.google.android.apps.messaging",
+            "com.google.android.dialer","com.google.android.contacts",
+            "com.google.android.calendar","com.google.android.keep",
+            "com.google.android.apps.docs","com.google.android.apps.drive",
+            "com.google.android.apps.youtube.music","com.google.android.gmail",
+            "com.google.android.apps.translate","com.google.android.calculator",
+            "com.google.android.deskclock","com.google.android.apps.wallpaper",
+            "com.google.android.apps.chrome","com.android.chrome",
+            # --- Mensajeria ---
+            "com.whatsapp","com.whatsapp.w4b",
+            "org.telegram.messenger","org.telegram.plus",
+            "com.facebook.orca","com.facebook.mlite",
+            "com.viber.voip","com.skype.raider","com.discord",
+            "com.snapchat.android","com.instagram.android",
+            "com.tencent.mm",  # WeChat
+            # --- Redes sociales ---
+            "com.facebook.katana","com.facebook.lite",
+            "com.twitter.android","com.twitter.android.lite",
+            "com.linkedin.android","com.pinterest",
+            "com.zhiliaoapp.musically",  # TikTok
+            "com.ss.android.ugc.trill",  # TikTok alternativo
+            # --- Browsers ---
+            "com.android.browser","com.sec.android.app.sbrowser",
+            "com.mi.globalbrowser","org.mozilla.firefox","org.mozilla.focus",
+            "com.opera.browser","com.opera.mini.native",
+            "com.brave.browser","com.microsoft.emmx",
+            "com.UCMobile.intl","com.uc.browser.en",
+            # --- Samsung OEM ---
+            "com.samsung.android.contacts","com.samsung.android.messaging",
+            "com.samsung.android.dialer","com.samsung.android.app.galaxystore",
+            "com.samsung.android.lool","com.samsung.android.mobileservice",
+            "com.samsung.android.providers.contacts","com.samsung.android.app.clockpackage",
+            "com.samsung.android.app.notes","com.samsung.android.calendar",
+            "com.samsung.android.incallui","com.samsung.android.app.smartcapture",
+            "com.samsung.android.app.spage","com.samsung.android.app.settings.bixby",
+            "com.samsung.android.knox.containeragent","com.samsung.android.gallery3d",
+            "com.samsung.android.app.galaxyfinder","com.samsung.android.video",
+            "com.samsung.android.music","com.samsung.android.email.provider",
+            "com.samsung.android.app.memo","com.samsung.android.kidsinstaller",
+            # --- Xiaomi/MIUI OEM ---
+            "com.miui.gallery","com.miui.videoplayer","com.miui.player",
+            "com.miui.notes","com.miui.calculator","com.miui.clock",
+            "com.miui.contacts","com.miui.messaging","com.miui.dialer",
+            "com.miui.browser","com.mi.globalbrowser",
+            "com.xiaomi.mipicks",  # GetApps
+            "com.miui.securitycenter",  # Security app MIUI (OEM)
+            # --- OPPO/Realme/OnePlus OEM ---
+            "com.coloros.gallery3d","com.oppo.gallery3d",
+            "com.heytap.browser","com.realme.community",
+            "com.oneplus.gallery","com.oneplus.filemanager",
+            # --- Musica y entretenimiento ---
+            "com.spotify.music","com.deezer.android",
+            "com.amazon.mp3","com.shazam.android",
+            "com.netflix.mediaclient","com.primevideo",
+            "com.disney.disneyplus","com.hbo.hbonow",
+            # --- Productividad y utilidades conocidas ---
+            "com.microsoft.office.word","com.microsoft.office.excel",
+            "com.microsoft.office.powerpoint","com.microsoft.teams",
+            "com.microsoft.launcher","com.microsoft.skydrive",
+            "com.adobe.reader","com.adobe.lrmobile",
+            "com.dropbox.android","com.box.android",
+            "com.evernote","com.todoist","com.trello",
+            "com.lastpass.lpandroid","com.dashlane",
+            # --- Mapas y transporte ---
+            "com.waze","com.ubercab","com.ubercab.eats",
+            "com.indriver.app","com.cabify.rider",
+            # --- Bancos y pagos (Peru y Latam comunes) ---
+            "pe.com.interbank.appinterbank","com.bcp.banca.movil",
+            "com.bbva.pe","com.scotiabank.pe",
+            "com.yape.app","com.bim.wallet",
+            "com.ripley.banco","com.falabella.bancafalabella",
+            "pe.bn.movil","com.financiero.banbif",
+            # --- Camara y foto ---
+            "com.google.android.GoogleCamera","com.sec.android.app.camera",
+            "com.mi.camera","com.oneplus.camera","com.coloros.camera",
+            "com.adobe.lrmobile","com.snapchat.android",
+            # --- Tiendas de apps ---
+            "com.android.vending",  # Google Play Store
+            "com.amazon.venezia"    # Amazon Appstore
         ),
         [System.StringComparer]::OrdinalIgnoreCase
     )
@@ -2496,7 +3373,7 @@ $btnsA3[1].Add_Click({
         "BIND_DEVICE_ADMIN"=3; "RECEIVE_BOOT_COMPLETED"=1
     }
 
-    # ---- FIRMAS Y KEYWORDS conocidas ----
+    # ---- FIRMAS Y KEYWORDS conocidas de malware ----
     $autoMark = [System.Collections.Generic.HashSet[string]]::new(
         [string[]]@(
             "com.clean.master","com.cleanmaster.mguard","com.junk.clean","com.boost.speed",
@@ -2528,17 +3405,16 @@ $btnsA3[1].Add_Click({
 
     $appList = [System.Collections.Generic.List[hashtable]]::new()
     foreach ($line in $pkgLines) {
+        $pkgName = ""; $apkPath = ""
         if ($line -match "^package:(.+)=([^\s]+)$") {
             $apkPath = $Matches[1].Trim(); $pkgName = $Matches[2].Trim()
-            if ($pkgName -and -not $sysWhitelist.Contains($pkgName)) {
-                $appList.Add(@{ pkg=$pkgName; apk=$apkPath; score=0; permFlags=[System.Collections.Generic.List[string]]::new() })
-            }
         } elseif ($line -match "^package:([^\s]+)$") {
-            $p = $Matches[1].Trim()
-            if ($p -and -not $sysWhitelist.Contains($p)) {
-                $appList.Add(@{ pkg=$p; apk=""; score=0; permFlags=[System.Collections.Generic.List[string]]::new() })
-            }
+            $pkgName = $Matches[1].Trim()
         }
+        if (-not $pkgName) { continue }
+        if ($sysWhitelist.Contains($pkgName)) { continue }   # excluir totalmente
+        $safe = $knownSafeList.Contains($pkgName)
+        $appList.Add(@{ pkg=$pkgName; apk=$apkPath; score=0; isSafe=$safe; permFlags=[System.Collections.Generic.List[string]]::new() })
     }
 
     if ($appList.Count -eq 0) {
@@ -2553,6 +3429,14 @@ $btnsA3[1].Add_Click({
         $ii++
         if ($ii % 10 -eq 0) { $btn.Text = "ESCANEANDO... $ii/$($appList.Count)"; [System.Windows.Forms.Application]::DoEvents() }
         $pkg = $app.pkg; $score = 0
+
+        # Apps protegidas: no acumulan score por permisos (son legitimas)
+        # Solo marcar si coincide con firma de malware conocida
+        if ($app.isSafe) {
+            if ($autoMark.Contains($pkg)) { $score += 10 }  # malware conocido que usurpa nombre
+            $app.score = $score
+            continue
+        }
 
         if ($autoMark.Contains($pkg)) { $score += 10 }
         foreach ($kw in $autoKw) { if ($pkg -imatch $kw) { $score += 5; break } }
@@ -2569,166 +3453,251 @@ $btnsA3[1].Add_Click({
         $app.score = $score
     }
 
-    # ---- MAPA pkg->app y lista ordenada por score ----
+    # ---- MAPA pkg->app y lista ordenada ----
+    # Orden: malware/sospechosos primero (score desc), luego normales, protegidas al final
     $appMap = @{}
     foreach ($app in $appList) { $appMap[$app.pkg] = $app }
     $allItems = [System.Collections.Generic.List[hashtable]]::new()
-    foreach ($app in ($appList | Sort-Object { $_.score } -Descending)) { $allItems.Add($app) }
+    $sorted = $appList | Sort-Object {
+        if ($_.isSafe) { -999 } else { $_.score * -1 }
+    }
+    foreach ($app in $sorted) { $allItems.Add($app) }
+
+    # Colores por categoria
+    $colDanger  = [System.Drawing.Color]::FromArgb(255, 80,  80)   # Rojo     score>=10
+    $colWarn    = [System.Drawing.Color]::FromArgb(255,160,  40)   # Naranja  score>=5
+    $colNeutral = [System.Drawing.Color]::FromArgb(200,200,200)    # Gris claro score>=1
+    $colClean   = [System.Drawing.Color]::FromArgb(130,130,130)    # Gris oscuro score=0
+    $colSafe    = [System.Drawing.Color]::FromArgb( 80,220,120)    # Verde    protegida
+    $colBgDark  = [System.Drawing.Color]::FromArgb( 25, 25, 25)
+    $colBgSafe  = [System.Drawing.Color]::FromArgb( 15, 35, 20)   # fondo verde muy oscuro
+    $colBgWarn  = [System.Drawing.Color]::FromArgb( 40, 20, 10)
+    $colBgDang  = [System.Drawing.Color]::FromArgb( 45, 10, 10)
+
+    $abbrevMap = @{
+        "RECORD_AUDIO"="MIC"; "READ_SMS"="SMS_R"; "RECEIVE_SMS"="SMS_IN"; "SEND_SMS"="SMS_W"
+        "ACCESS_FINE_LOCATION"="GPS"; "ACCESS_BACKGROUND_LOCATION"="GPS_BG"
+        "READ_CALL_LOG"="CALLS"; "BIND_ACCESSIBILITY_SERVICE"="A11Y"
+        "BIND_DEVICE_ADMIN"="ADMIN"; "INSTALL_PACKAGES"="INST_PKG"
+        "REQUEST_INSTALL_PACKAGES"="REQ_INST"; "SYSTEM_ALERT_WINDOW"="OVERLAY"
+        "CAMERA"="CAM"; "READ_CONTACTS"="CONT_R"; "PROCESS_OUTGOING_CALLS"="CALLS_OUT"
+        "GET_ACCOUNTS"="ACCTS"; "READ_PHONE_STATE"="PHONE"; "RECEIVE_BOOT_COMPLETED"="BOOT"
+        "WRITE_CONTACTS"="CONT_W"
+    }
+
+    # Estado de checks persistente entre filtros
+    $checkState = @{}
 
     # ============================================================
     # CONSTRUIR VENTANA
     # ============================================================
     $win = New-Object Windows.Forms.Form
     $win.Text          = "REMOVER ADWARE / MALWARE  -  RNX TOOL PRO  |  $model  ($serial)"
-    $win.ClientSize    = New-Object System.Drawing.Size(940, 630)
+    $win.ClientSize    = New-Object System.Drawing.Size(980, 660)
     $win.BackColor     = [System.Drawing.Color]::FromArgb(18,18,18)
     $win.FormBorderStyle = "FixedSingle"
     $win.StartPosition = "CenterScreen"
     $win.TopMost       = $true
 
-    $lblHeader = New-Object Windows.Forms.Label
-    $lblHeader.Text      = "  [!] = sospechosa   |   score = nivel de riesgo (permisos + firma)   |   apps del sistema excluidas automaticamente"
-    $lblHeader.Location  = New-Object System.Drawing.Point(0, 6)
-    $lblHeader.Size      = New-Object System.Drawing.Size(940, 18)
-    $lblHeader.ForeColor = [System.Drawing.Color]::Cyan
-    $lblHeader.Font      = New-Object System.Drawing.Font("Segoe UI",8)
-    $win.Controls.Add($lblHeader)
+    # ---- Leyenda de colores ----
+    $pnlLegend = New-Object Windows.Forms.Panel
+    $pnlLegend.Location = New-Object System.Drawing.Point(0,0)
+    $pnlLegend.Size = New-Object System.Drawing.Size(980, 22)
+    $pnlLegend.BackColor = [System.Drawing.Color]::FromArgb(28,28,28)
+    $win.Controls.Add($pnlLegend)
 
+    $mkLbl = {
+        param($txt,$x,$col)
+        $l = New-Object Windows.Forms.Label
+        $l.Text = $txt; $l.Location = New-Object System.Drawing.Point($x,3)
+        $l.Size = New-Object System.Drawing.Size(160,16)
+        $l.ForeColor = $col; $l.Font = New-Object System.Drawing.Font("Segoe UI",7.5,[System.Drawing.FontStyle]::Bold)
+        $pnlLegend.Controls.Add($l)
+    }
+    & $mkLbl "  [!!] PELIGROSO (score>=10)"   0   $colDanger
+    & $mkLbl "  [! ] SOSPECHOSO (score>=5)"  175   $colWarn
+    & $mkLbl "  [~]  REVISAR (score 1-4)"    355   $colNeutral
+    & $mkLbl "  [  ] SIN RIESGO"             520   $colClean
+    & $mkLbl "  [OK] PROTEGIDA / CONOCIDA"   665   $colSafe
+
+    # ---- Barra de busqueda ----
     $lblSearch = New-Object Windows.Forms.Label
-    $lblSearch.Text = "Buscar:"; $lblSearch.Location = New-Object System.Drawing.Point(12,30)
-    $lblSearch.Size = New-Object System.Drawing.Size(44,22)
+    $lblSearch.Text = "Buscar:"; $lblSearch.Location = New-Object System.Drawing.Point(8,28)
+    $lblSearch.Size = New-Object System.Drawing.Size(46,22)
     $lblSearch.ForeColor = [System.Drawing.Color]::FromArgb(160,160,160)
     $lblSearch.Font = New-Object System.Drawing.Font("Segoe UI",8)
     $win.Controls.Add($lblSearch)
 
     $txtSearch = New-Object Windows.Forms.TextBox
-    $txtSearch.Location = New-Object System.Drawing.Point(58,28); $txtSearch.Size = New-Object System.Drawing.Size(340,22)
+    $txtSearch.Location = New-Object System.Drawing.Point(56,26); $txtSearch.Size = New-Object System.Drawing.Size(300,22)
     $txtSearch.BackColor = [System.Drawing.Color]::FromArgb(35,35,35); $txtSearch.ForeColor = [System.Drawing.Color]::White
     $txtSearch.Font = New-Object System.Drawing.Font("Consolas",9); $txtSearch.BorderStyle = "FixedSingle"
     $win.Controls.Add($txtSearch)
 
+    # Filtro rapido por categoria
+    $cmbFilter = New-Object Windows.Forms.ComboBox
+    $cmbFilter.Location = New-Object System.Drawing.Point(364,26); $cmbFilter.Size = New-Object System.Drawing.Size(140,22)
+    $cmbFilter.DropDownStyle = "DropDownList"
+    $cmbFilter.BackColor = [System.Drawing.Color]::FromArgb(35,35,35); $cmbFilter.ForeColor = [System.Drawing.Color]::White
+    $cmbFilter.Font = New-Object System.Drawing.Font("Segoe UI",8)
+    @("Todas","Solo peligrosas","Solo sospechosas","Solo protegidas","Sin riesgo") |
+        ForEach-Object { $cmbFilter.Items.Add($_) | Out-Null }
+    $cmbFilter.SelectedIndex = 0
+    $win.Controls.Add($cmbFilter)
+
     $lblCount = New-Object Windows.Forms.Label
-    $lblCount.Location = New-Object System.Drawing.Point(410,32); $lblCount.Size = New-Object System.Drawing.Size(520,18)
-    $lblCount.ForeColor = [System.Drawing.Color]::FromArgb(120,120,120)
-    $lblCount.Font = New-Object System.Drawing.Font("Segoe UI",8)
+    $lblCount.Location = New-Object System.Drawing.Point(515,30); $lblCount.Size = New-Object System.Drawing.Size(460,16)
+    $lblCount.ForeColor = [System.Drawing.Color]::FromArgb(110,110,110)
+    $lblCount.Font = New-Object System.Drawing.Font("Segoe UI",7.5)
     $win.Controls.Add($lblCount)
 
-    $clb = New-Object Windows.Forms.CheckedListBox
-    $clb.Location = New-Object System.Drawing.Point(12,56); $clb.Size = New-Object System.Drawing.Size(916,512)
-    $clb.BackColor = [System.Drawing.Color]::FromArgb(25,25,25); $clb.ForeColor = [System.Drawing.Color]::White
-    $clb.Font = New-Object System.Drawing.Font("Consolas",9); $clb.BorderStyle = "FixedSingle"; $clb.CheckOnClick = $true
-    $win.Controls.Add($clb)
+    # ---- ListView principal con colores ----
+    $lv = New-Object Windows.Forms.ListView
+    $lv.Location = New-Object System.Drawing.Point(8,54); $lv.Size = New-Object System.Drawing.Size(962,540)
+    $lv.View = [System.Windows.Forms.View]::Details
+    $lv.FullRowSelect = $true; $lv.CheckBoxes = $true; $lv.GridLines = $false
+    $lv.BackColor = [System.Drawing.Color]::FromArgb(22,22,22)
+    $lv.ForeColor = [System.Drawing.Color]::White
+    $lv.Font = New-Object System.Drawing.Font("Consolas",8.5)
+    $lv.BorderStyle = "FixedSingle"
+    $lv.HeaderStyle = "Nonclickable"
 
-    # Estado de checks persistente entre filtros
-    $checkState = @{}
+    $lv.Columns.Add("Estado",  60)  | Out-Null
+    $lv.Columns.Add("Paquete", 430) | Out-Null
+    $lv.Columns.Add("Score",    52) | Out-Null
+    $lv.Columns.Add("Permisos",400) | Out-Null
+    $win.Controls.Add($lv)
 
-    $script:MakeLabel = {
+    # ---- Funcion para obtener color y tag de una app ----
+    $script:GetAppStyle = {
         param($app)
-        $tag = if     ($app.score -ge 10) { "[!!]" } elseif ($app.score -ge 5) { "[! ]" } else { "[  ]" }
-        $pkg = $app.pkg
-        $pkgPad = if ($pkg.Length -lt 55) { $pkg.PadRight(55) } else { $pkg.Substring(0,52) + "..." }
-        $scoreStr = if ($app.score -gt 0) { "  score:$($app.score.ToString().PadLeft(2))" } else { "          " }
-        $permStr = ""
-        if ($app.permFlags.Count -gt 0) {
-            $abbrevMap = @{
-                "RECORD_AUDIO"="MIC"; "READ_SMS"="SMS_R"; "RECEIVE_SMS"="SMS_IN"; "SEND_SMS"="SMS_W"
-                "ACCESS_FINE_LOCATION"="GPS"; "ACCESS_BACKGROUND_LOCATION"="GPS_BG"
-                "READ_CALL_LOG"="CALLS"; "BIND_ACCESSIBILITY_SERVICE"="A11Y"
-                "BIND_DEVICE_ADMIN"="ADMIN"; "INSTALL_PACKAGES"="INST_PKG"
-                "REQUEST_INSTALL_PACKAGES"="REQ_INST"; "SYSTEM_ALERT_WINDOW"="OVERLAY"
-                "CAMERA"="CAM"; "READ_CONTACTS"="CONT_R"; "PROCESS_OUTGOING_CALLS"="CALLS_OUT"
-                "GET_ACCOUNTS"="ACCTS"; "READ_PHONE_STATE"="PHONE"; "RECEIVE_BOOT_COMPLETED"="BOOT"
-            }
-            $flags = $app.permFlags | ForEach-Object { if ($abbrevMap.ContainsKey($_)) { $abbrevMap[$_] } else { $_ } }
-            $shown = $flags | Select-Object -First 4
-            $extra = if ($app.permFlags.Count -gt 4) { "+$($app.permFlags.Count - 4)" } else { "" }
-            $permStr = "  [" + ($shown -join ",") + $(if ($extra) { ",$extra" } else { "" }) + "]"
+        if ($app.isSafe) {
+            return @{ tag="[OK]"; fg=$colSafe; bg=$colBgSafe }
         }
-        return "$tag $pkgPad$scoreStr$permStr"
+        if ($app.score -ge 10) { return @{ tag="[!!]"; fg=$colDanger; bg=$colBgDang } }
+        if ($app.score -ge 5)  { return @{ tag="[! ]"; fg=$colWarn;   bg=$colBgWarn } }
+        if ($app.score -ge 1)  { return @{ tag="[~ ]"; fg=$colNeutral; bg=$colBgDark } }
+        return @{ tag="[  ]"; fg=$colClean; bg=$colBgDark }
     }
 
-    $script:PopulateCLB = {
-        param($filter)
-        $clb.Items.Clear()
-        $shown = 0
-        $filterLow = if ($filter) { $filter.ToLower() } else { "" }
+    # ---- Poblar ListView ----
+    $script:PopulateLV = {
+        param($textFilter, $catFilter)
+        $lv.Items.Clear()
+        $lv.BeginUpdate()
+        $shown = 0; $selCount = 0
+
         foreach ($app in $allItems) {
-            if ($filterLow) {
-                $matchPkg   = $app.pkg -imatch [regex]::Escape($filter)
-                $matchPerms = ($app.permFlags -join " ") -imatch [regex]::Escape($filter)
-                $matchScore = $filter -match "^\d+$" -and $app.score -ge [int]$filter
-                if (-not ($matchPkg -or $matchPerms -or $matchScore)) { continue }
+            # Filtro de texto
+            if ($textFilter) {
+                $matchPkg   = $app.pkg -imatch [regex]::Escape($textFilter)
+                $matchPerms = ($app.permFlags -join " ") -imatch [regex]::Escape($textFilter)
+                if (-not ($matchPkg -or $matchPerms)) { continue }
             }
-            $label     = & $script:MakeLabel $app
-            $isChecked = if ($checkState.ContainsKey($app.pkg)) { $checkState[$app.pkg] } else { $app.score -ge 5 }
+            # Filtro de categoria
+            switch ($catFilter) {
+                "Solo peligrosas"   { if ($app.isSafe -or $app.score -lt 10) { continue } }
+                "Solo sospechosas"  { if ($app.isSafe -or $app.score -lt 5)  { continue } }
+                "Solo protegidas"   { if (-not $app.isSafe) { continue } }
+                "Sin riesgo"        { if ($app.isSafe -or $app.score -gt 0)  { continue } }
+            }
+
+            $style = & $script:GetAppStyle $app
+            $permShort = ""
+            if ($app.permFlags.Count -gt 0) {
+                $flags = $app.permFlags | ForEach-Object { if ($abbrevMap.ContainsKey($_)) { $abbrevMap[$_] } else { $_ } }
+                $shown4 = $flags | Select-Object -First 5
+                $extra  = if ($app.permFlags.Count -gt 5) { " +$($app.permFlags.Count-5)mas" } else { "" }
+                $permShort = ($shown4 -join "  ") + $extra
+            }
+            $scoreDisp = if ($app.score -gt 0) { "$($app.score)" } else { "-" }
+
+            $lvi = New-Object Windows.Forms.ListViewItem($style.tag)
+            $lvi.ForeColor = $style.fg
+            $lvi.BackColor = $style.bg
+            $lvi.SubItems.Add($app.pkg)   | Out-Null
+            $lvi.SubItems.Add($scoreDisp) | Out-Null
+            $lvi.SubItems.Add($permShort) | Out-Null
+            $lvi.Tag = $app.pkg
+
+            # Estado del check
+            $isChecked = if ($checkState.ContainsKey($app.pkg)) {
+                $checkState[$app.pkg]
+            } else {
+                # Por defecto: sospechosas/peligrosas marcadas, protegidas y limpias NO
+                $app.score -ge 5 -and -not $app.isSafe
+            }
             if (-not $checkState.ContainsKey($app.pkg)) { $checkState[$app.pkg] = $isChecked }
-            $clb.Items.Add($label, $isChecked) | Out-Null; $shown++
+            $lvi.Checked = $isChecked
+            if ($isChecked) { $selCount++ }
+
+            $lv.Items.Add($lvi) | Out-Null
+            $shown++
         }
-        $marked   = 0; for ($i=0; $i -lt $clb.Items.Count; $i++) { if ($clb.GetItemChecked($i)) { $marked++ } }
-        $highRisk = ($allItems | Where-Object { $_.score -ge 5 }).Count
-        $lblCount.Text = "$($allItems.Count) apps  |  mostrando: $shown  |  seleccionadas: $marked  |  riesgo alto [!!]/[! ]: $highRisk  |  whitelist excluidas"
+
+        $lv.EndUpdate()
+        $highRisk  = ($allItems | Where-Object { -not $_.isSafe -and $_.score -ge 10 }).Count
+        $warnCount = ($allItems | Where-Object { -not $_.isSafe -and $_.score -ge 5 -and $_.score -lt 10 }).Count
+        $safeCount = ($allItems | Where-Object { $_.isSafe }).Count
+        $lblCount.Text = "Total: $($allItems.Count)  |  Mostrando: $shown  |  Marcadas: $selCount  |  [!!]: $highRisk  [! ]: $warnCount  [OK]: $safeCount"
     }
 
-    & $script:PopulateCLB ""
+    & $script:PopulateLV "" "Todas"
 
-    $clb.Add_ItemCheck({
-        $lbl = $clb.Items[$_.Index].ToString()
-        $pkg = ($lbl -replace "^\[.{2,3}\]\s+","" -replace "\s*\[.*","").Trim()
-        $checkState[$pkg] = ($_.NewValue -eq "Checked")
-        $delta   = if ($_.NewValue -eq "Checked") { 1 } else { -1 }
-        $marked  = 0; for ($i=0; $i -lt $clb.Items.Count; $i++) { if ($clb.GetItemChecked($i)) { $marked++ } }
-        $marked += $delta
-        $highRisk = ($allItems | Where-Object { $_.score -ge 5 }).Count
-        $lblCount.Text = "$($allItems.Count) apps  |  mostrando: $($clb.Items.Count)  |  seleccionadas: $marked  |  riesgo alto: $highRisk  |  whitelist excluidas"
+    $lv.Add_ItemChecked({
+        $pkg = $_.Item.Tag
+        $checkState[$pkg] = $_.Item.Checked
+        $selCount = 0
+        foreach ($lvi in $lv.Items) { if ($lvi.Checked) { $selCount++ } }
+        $highRisk  = ($allItems | Where-Object { -not $_.isSafe -and $_.score -ge 10 }).Count
+        $warnCount = ($allItems | Where-Object { -not $_.isSafe -and $_.score -ge 5 -and $_.score -lt 10 }).Count
+        $safeCount = ($allItems | Where-Object { $_.isSafe }).Count
+        $lblCount.Text = "Total: $($allItems.Count)  |  Mostrando: $($lv.Items.Count)  |  Marcadas: $selCount  |  [!!]: $highRisk  [! ]: $warnCount  [OK]: $safeCount"
     })
 
-    $txtSearch.Add_TextChanged({ & $script:PopulateCLB $txtSearch.Text.Trim() })
+    $txtSearch.Add_TextChanged({ & $script:PopulateLV $txtSearch.Text.Trim() $cmbFilter.SelectedItem })
+    $cmbFilter.Add_SelectedIndexChanged({ & $script:PopulateLV $txtSearch.Text.Trim() $cmbFilter.SelectedItem })
 
-    # ---- BOTONES ----
-    $btnY = 576
+    # ---- BOTONES (ahora usan $lv en vez de $clb) ----
+    $btnY = 602
 
     $btnSelAll = New-Object Windows.Forms.Button
-    $btnSelAll.Text="MARCAR TODAS"; $btnSelAll.Location=New-Object System.Drawing.Point(12,$btnY)
-    $btnSelAll.Size=New-Object System.Drawing.Size(115,28); $btnSelAll.FlatStyle="Flat"
+    $btnSelAll.Text="MARCAR TODAS"; $btnSelAll.Location=New-Object System.Drawing.Point(8,$btnY)
+    $btnSelAll.Size=New-Object System.Drawing.Size(110,28); $btnSelAll.FlatStyle="Flat"
     $btnSelAll.ForeColor=[System.Drawing.Color]::White; $btnSelAll.BackColor=[System.Drawing.Color]::FromArgb(40,40,40)
     $btnSelAll.FlatAppearance.BorderColor=[System.Drawing.Color]::FromArgb(80,80,80)
     $btnSelAll.Font=New-Object System.Drawing.Font("Segoe UI",8,[System.Drawing.FontStyle]::Bold)
     $btnSelAll.Add_Click({
-        for ($i=0; $i -lt $clb.Items.Count; $i++) {
-            $clb.SetItemChecked($i,$true)
-            $pkg=($clb.Items[$i].ToString() -replace "^\[.{2,3}\]\s+","" -replace "\s*\[.*","").Trim()
-            $checkState[$pkg]=$true
+        foreach ($lvi in $lv.Items) {
+            $lvi.Checked = $true; $checkState[$lvi.Tag] = $true
         }
     })
     $win.Controls.Add($btnSelAll)
 
     $btnNone = New-Object Windows.Forms.Button
-    $btnNone.Text="DESMARCAR"; $btnNone.Location=New-Object System.Drawing.Point(135,$btnY)
-    $btnNone.Size=New-Object System.Drawing.Size(100,28); $btnNone.FlatStyle="Flat"
+    $btnNone.Text="DESMARCAR"; $btnNone.Location=New-Object System.Drawing.Point(126,$btnY)
+    $btnNone.Size=New-Object System.Drawing.Size(95,28); $btnNone.FlatStyle="Flat"
     $btnNone.ForeColor=[System.Drawing.Color]::White; $btnNone.BackColor=[System.Drawing.Color]::FromArgb(40,40,40)
     $btnNone.FlatAppearance.BorderColor=[System.Drawing.Color]::FromArgb(80,80,80)
     $btnNone.Font=New-Object System.Drawing.Font("Segoe UI",8,[System.Drawing.FontStyle]::Bold)
     $btnNone.Add_Click({
-        for ($i=0; $i -lt $clb.Items.Count; $i++) {
-            $clb.SetItemChecked($i,$false)
-            $pkg=($clb.Items[$i].ToString() -replace "^\[.{2,3}\]\s+","" -replace "\s*\[.*","").Trim()
-            $checkState[$pkg]=$false
+        foreach ($lvi in $lv.Items) {
+            $lvi.Checked = $false; $checkState[$lvi.Tag] = $false
         }
     })
     $win.Controls.Add($btnNone)
 
     $btnOnlySusp = New-Object Windows.Forms.Button
-    $btnOnlySusp.Text="SOLO [!]"; $btnOnlySusp.Location=New-Object System.Drawing.Point(243,$btnY)
-    $btnOnlySusp.Size=New-Object System.Drawing.Size(90,28); $btnOnlySusp.FlatStyle="Flat"
+    $btnOnlySusp.Text="SOLO RIESGO"; $btnOnlySusp.Location=New-Object System.Drawing.Point(229,$btnY)
+    $btnOnlySusp.Size=New-Object System.Drawing.Size(100,28); $btnOnlySusp.FlatStyle="Flat"
     $btnOnlySusp.ForeColor=[System.Drawing.Color]::Orange; $btnOnlySusp.BackColor=[System.Drawing.Color]::FromArgb(40,30,10)
     $btnOnlySusp.FlatAppearance.BorderColor=[System.Drawing.Color]::Orange
     $btnOnlySusp.Font=New-Object System.Drawing.Font("Segoe UI",8,[System.Drawing.FontStyle]::Bold)
     $btnOnlySusp.Add_Click({
-        for ($i=0; $i -lt $clb.Items.Count; $i++) {
-            $isSusp=($clb.Items[$i].ToString() -match "^\[!.")   # matchea [!!] y [! ]
-            $clb.SetItemChecked($i,$isSusp)
-            $pkg=($clb.Items[$i].ToString() -replace "^\[.{2,3}\]\s+","" -replace "\s*\[.*","").Trim()
-            $checkState[$pkg]=$isSusp
+        foreach ($lvi in $lv.Items) {
+            $app = $appMap[$lvi.Tag]
+            $isSusp = ($app -and -not $app.isSafe -and $app.score -ge 5)
+            $lvi.Checked = $isSusp; $checkState[$lvi.Tag] = $isSusp
         }
     })
     $win.Controls.Add($btnOnlySusp)
@@ -2736,7 +3705,7 @@ $btnsA3[1].Add_Click({
     # MODO TURBO
     $script:turboMode = $false
     $btnTurbo = New-Object Windows.Forms.Button
-    $btnTurbo.Text="!! TURBO !!"; $btnTurbo.Location=New-Object System.Drawing.Point(341,$btnY)
+    $btnTurbo.Text="!! TURBO !!"; $btnTurbo.Location=New-Object System.Drawing.Point(337,$btnY)
     $btnTurbo.Size=New-Object System.Drawing.Size(105,28); $btnTurbo.FlatStyle="Flat"
     $btnTurbo.ForeColor=[System.Drawing.Color]::Red; $btnTurbo.BackColor=[System.Drawing.Color]::FromArgb(40,10,10)
     $btnTurbo.FlatAppearance.BorderColor=[System.Drawing.Color]::OrangeRed
@@ -2802,7 +3771,8 @@ $btnsA3[1].Add_Click({
         $res = $td.ShowDialog()
         if ($res -ne [System.Windows.Forms.DialogResult]::OK) { return }
 
-        $script:uninstallResult = $targets | ForEach-Object { $_.pkg }
+        # Excluir protegidas del turbo aunque tengan score (no deberian tenerlo)
+        $script:uninstallResult = ($targets | Where-Object { -not $_.isSafe }) | ForEach-Object { $_.pkg }
         $script:turboMode = $true
         $win.DialogResult = [System.Windows.Forms.DialogResult]::OK
         $win.Close()
@@ -2812,17 +3782,15 @@ $btnsA3[1].Add_Click({
     $script:uninstallResult = @()
 
     $btnUninstall = New-Object Windows.Forms.Button
-    $btnUninstall.Text="DESINSTALAR SELECCIONADAS"; $btnUninstall.Location=New-Object System.Drawing.Point(454,$btnY)
-    $btnUninstall.Size=New-Object System.Drawing.Size(228,28); $btnUninstall.FlatStyle="Flat"
+    $btnUninstall.Text="DESINSTALAR SELECCIONADAS"; $btnUninstall.Location=New-Object System.Drawing.Point(450,$btnY)
+    $btnUninstall.Size=New-Object System.Drawing.Size(238,28); $btnUninstall.FlatStyle="Flat"
     $btnUninstall.ForeColor=[System.Drawing.Color]::Lime; $btnUninstall.BackColor=[System.Drawing.Color]::FromArgb(10,40,10)
     $btnUninstall.FlatAppearance.BorderColor=[System.Drawing.Color]::Lime
     $btnUninstall.Font=New-Object System.Drawing.Font("Segoe UI",8,[System.Drawing.FontStyle]::Bold)
     $btnUninstall.Add_Click({
         $selected = @()
-        for ($i=0; $i -lt $clb.Items.Count; $i++) {
-            if ($clb.GetItemChecked($i)) {
-                $selected += ($clb.Items[$i].ToString() -replace "^\[.{2,3}\]\s+","" -replace "\s*\[.*","").Trim()
-            }
+        foreach ($lvi in $lv.Items) {
+            if ($lvi.Checked) { $selected += $lvi.Tag }
         }
         if ($selected.Count -eq 0) {
             [System.Windows.Forms.MessageBox]::Show("No hay apps seleccionadas.","Sin seleccion",[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Information) | Out-Null
@@ -2841,8 +3809,8 @@ $btnsA3[1].Add_Click({
     $win.Controls.Add($btnUninstall)
 
     $btnClose = New-Object Windows.Forms.Button
-    $btnClose.Text="CERRAR"; $btnClose.Location=New-Object System.Drawing.Point(690,$btnY)
-    $btnClose.Size=New-Object System.Drawing.Size(116,28); $btnClose.FlatStyle="Flat"
+    $btnClose.Text="CERRAR"; $btnClose.Location=New-Object System.Drawing.Point(696,$btnY)
+    $btnClose.Size=New-Object System.Drawing.Size(110,28); $btnClose.FlatStyle="Flat"
     $btnClose.ForeColor=[System.Drawing.Color]::FromArgb(160,160,160); $btnClose.BackColor=[System.Drawing.Color]::FromArgb(35,35,35)
     $btnClose.FlatAppearance.BorderColor=[System.Drawing.Color]::FromArgb(80,80,80)
     $btnClose.Font=New-Object System.Drawing.Font("Segoe UI",8,[System.Drawing.FontStyle]::Bold)
@@ -2866,25 +3834,72 @@ $btnsA3[1].Add_Click({
 
     $cntOK = 0; $cntFail = 0
     foreach ($pkg in $script:uninstallResult) {
+        # Seguridad: nunca procesar apps protegidas aunque lleguen aqui
+        if ($appMap.ContainsKey($pkg) -and $appMap[$pkg].isSafe) {
+            AdbLog "[~] Saltando app protegida: $pkg  (marcada como segura)"
+            continue
+        }
         AdbLog "[~] Procesando: $pkg"
         if ($appMap.ContainsKey($pkg) -and $appMap[$pkg].score -gt 0) {
             AdbLog "    Score: $($appMap[$pkg].score)  Permisos: $(($appMap[$pkg].permFlags -join ', '))"
         }
+
+        # PRE: forzar parada, revocar permisos peligrosos y limpiar datos
         try { & adb shell am force-stop $pkg 2>$null | Out-Null } catch {}
+        try { & adb shell pm revoke $pkg android.permission.SYSTEM_ALERT_WINDOW 2>$null | Out-Null } catch {}
         try { & adb shell cmd appops set $pkg SYSTEM_ALERT_WINDOW deny 2>$null | Out-Null } catch {}
         try { & adb shell pm clear $pkg 2>$null | Out-Null } catch {}
+
+        $removed = $false
+
+        # METODO 1: uninstall --user 0  (desinstala para el usuario actual sin root)
         $r = ""
         try { $r = (& adb shell pm uninstall --user 0 $pkg 2>&1) -join "" } catch {}
         if ($r -imatch "Success|DELETE_SUCCEEDED") {
-            AdbLog "[OK] Removida       : $pkg"; $cntOK++
-        } else {
+            AdbLog "[OK] Removida (uninstall --user 0) : $pkg"; $cntOK++; $removed = $true
+        }
+
+        if (-not $removed) {
+            # METODO 2: uninstall sin flag  (algunos fabricantes requieren esto)
             $r2 = ""
-            try { $r2 = (& adb shell pm disable-user --user 0 $pkg 2>&1) -join "" } catch {}
-            if ($r2 -imatch "disabled|success") {
-                AdbLog "[OK] Deshabilitada  : $pkg  (sistema)"; $cntOK++
-            } else {
-                AdbLog "[!!] Fallo           : $pkg  ->  $($r.Trim())"; $cntFail++
+            try { $r2 = (& adb shell pm uninstall $pkg 2>&1) -join "" } catch {}
+            if ($r2 -imatch "Success|DELETE_SUCCEEDED") {
+                AdbLog "[OK] Removida (uninstall)          : $pkg"; $cntOK++; $removed = $true
             }
+        }
+
+        if (-not $removed) {
+            # METODO 3: cmd package uninstall (Android 8+ alternativo)
+            $r3 = ""
+            try { $r3 = (& adb shell "cmd package uninstall --user 0 $pkg" 2>&1) -join "" } catch {}
+            if ($r3 -imatch "Success|DELETE_SUCCEEDED") {
+                AdbLog "[OK] Removida (cmd package)        : $pkg"; $cntOK++; $removed = $true
+            }
+        }
+
+        if (-not $removed) {
+            # METODO 4: disable-user  (para apps de sistema que no se pueden desinstalar)
+            $r4 = ""
+            try { $r4 = (& adb shell pm disable-user --user 0 $pkg 2>&1) -join "" } catch {}
+            if ($r4 -imatch "disabled|success") {
+                AdbLog "[OK] Deshabilitada (disable-user)  : $pkg  (app sistema)"; $cntOK++; $removed = $true
+            }
+        }
+
+        if (-not $removed) {
+            # METODO 5: pm hide  (oculta la app aunque no la desinstale - ultimo recurso)
+            $r5 = ""
+            try { $r5 = (& adb shell pm hide $pkg 2>&1) -join "" } catch {}
+            if ($r5 -imatch "hidden|success") {
+                AdbLog "[OK] Ocultada (pm hide)            : $pkg  (requiere verificar)"; $cntOK++; $removed = $true
+            }
+        }
+
+        if (-not $removed) {
+            # Todos los metodos fallaron - app probablemente protegida por el sistema
+            AdbLog "[!!] Fallo todos los metodos       : $pkg"
+            AdbLog "     -> En el equipo: Ajustes > Apps > $pkg > Desinstalar"
+            $cntFail++
         }
         [System.Windows.Forms.Application]::DoEvents()
     }
@@ -2897,25 +3912,921 @@ $btnsA3[1].Add_Click({
     AdbLog "  Removidas OK  : $cntOK"
     AdbLog "  Fallidas      : $cntFail"
     AdbLog ""
-    if ($cntOK -gt 0) { AdbLog "[OK] $cntOK apps eliminadas exitosamente." }
+    if ($cntOK -gt 0) { AdbLog "[OK] $cntOK apps eliminadas/deshabilitadas exitosamente." }
     if ($cntFail -gt 0) {
-        AdbLog "[!]  $cntFail apps fallaron. Requieren root para remocion completa."
-        AdbLog "[~]  Usa AUTOROOT MAGISK y repite."
+        AdbLog "[!]  $cntFail apps fallaron todos los metodos ADB."
+        AdbLog "[~]  Para esas apps: ve al equipo > Ajustes > Apps > selecciona la app > Desinstalar."
+        AdbLog "[~]  Si no aparece el boton Desinstalar, la app es del sistema y requiere root."
+        AdbLog "[~]  Opcion: usa AUTOROOT MAGISK y repite para remover del sistema."
     }
-    AdbLog "[~]  Reinicia el dispositivo para aplicar los cambios."
+    AdbLog "[~]  Reinicia el dispositivo para aplicar todos los cambios."
     AdbLog "=============================================="
 
     $Global:lblStatus.Text = "  RNX TOOL PRO v2.3  |  DESINSTALACION OK: $cntOK  |  $model"
 })
 
-$btnsA3[2].Add_Click({ AdbLog "[>] $($btnsA3[2].Text) : pendiente" })
-$btnsA3[3].Add_Click({ AdbLog "[>] $($btnsA3[3].Text) : pendiente" })
+$btnsA3[0].Add_Click({
+    # ============================================================
+    # ACTIVAR DIAG XIAOMI  -  Instala midiag.apk y abre puerto Qualcomm 9008
+    # ============================================================
+    $btn = $btnsA3[0]
+    $btn.Enabled = $false; $btn.Text = "EJECUTANDO..."
+    [System.Windows.Forms.Application]::DoEvents()
 
-# ---- CLONAR DISPOSITIVO (stub - futuro: adb backup full + transferencia) ----
+    $Global:logAdb.Clear()
+    AdbLog "=============================================="
+    AdbLog "   ACTIVAR DIAG XIAOMI  -  RNX TOOL PRO"
+    AdbLog "   $(Get-Date -Format 'dd/MM/yyyy  HH:mm:ss')"
+    AdbLog "=============================================="
+    AdbLog ""
+
+    if (-not (Check-ADB)) {
+        AdbLog "[!] Sin dispositivo ADB conectado."
+        $btn.Enabled = $true; $btn.Text = "ACTIVAR DIAG XIAOMI"; return
+    }
+
+    # Leer info del dispositivo
+    $diagModel  = (& adb shell getprop ro.product.model      2>$null).Trim()
+    $diagBrand  = (& adb shell getprop ro.product.brand      2>$null).Trim().ToUpper()
+    $diagAndro  = (& adb shell getprop ro.build.version.release 2>$null).Trim()
+    $diagMiui   = (& adb shell getprop ro.miui.ui.version.name  2>$null).Trim()
+    $diagHyper  = (& adb shell getprop ro.mi.os.version.incremental 2>$null).Trim()
+    $diagSerial = (& adb get-serialno 2>$null).Trim()
+
+    AdbLog "[+] Dispositivo : $diagBrand  $diagModel"
+    AdbLog "[+] Android     : $diagAndro"
+    if ($diagMiui  -ne "") { AdbLog "[+] MIUI/HyperOS: $diagMiui" }
+    if ($diagHyper -ne "") { AdbLog "[+] HyperOS ver : $diagHyper" }
+    AdbLog "[+] Serial      : $diagSerial"
+    AdbLog ""
+
+    # Bloquear si no es Xiaomi - midiag.apk usa firma de sistema Xiaomi
+    # y falla con INSTALL_FAILED_SHARED_USER_INCOMPATIBLE en otros fabricantes
+    if ($diagBrand -notmatch "XIAOMI|REDMI|POCO") {
+        AdbLog "[!] ERROR: Este dispositivo es $diagBrand - no es compatible."
+        AdbLog "[!] midiag.apk usa firma de sistema Xiaomi (android.uid.system)"
+        AdbLog "[!] y solo puede instalarse en dispositivos Xiaomi/Redmi/Poco."
+        AdbLog ""
+        AdbLog "[~] Conecta un dispositivo Xiaomi, Redmi o Poco para usar esta funcion."
+        $btn.Enabled = $true; $btn.Text = "ACTIVAR DIAG XIAOMI"; return
+    }
+
+    # Buscar midiag.apk - ruta principal: RNX_TOOL_PRO\tools\midiag.apk
+    $midiagApkName = "midiag.apk"
+    $midiagToolsPath = Join-Path $script:TOOLS_DIR $midiagApkName
+    AdbLog "[~] Buscando $midiagApkName en: $midiagToolsPath"
+    $midiagPath = if (Test-Path $midiagToolsPath -EA SilentlyContinue) { $midiagToolsPath } else { $null }
+    if ($midiagPath) {
+        AdbLog "[+] midiag.apk encontrado en tools\"
+    } else {
+        AdbLog "[~] No encontrado en tools\ -> se pedira seleccion manual."
+    }
+
+    # Verificar si midiag ya esta instalada en el equipo
+    AdbLog "[~] Verificando si MiDiag ya esta instalada en el equipo..."
+    $midiagInstalled = $false
+    $midiagPkg = "com.longcheertel.midtest"
+    $pkgCheck = (& adb shell "pm list packages $midiagPkg 2>/dev/null" 2>$null) -join ""
+    if ($pkgCheck -imatch $midiagPkg) {
+        $midiagInstalled = $true
+        AdbLog "[+] MiDiag ya esta instalada -> omitiendo instalacion."
+    } else {
+        AdbLog "[~] MiDiag no encontrada -> procediendo a instalar..."
+        if (-not $midiagPath) {
+            AdbLog "[~] midiag.apk no encontrado en rutas predeterminadas."
+            AdbLog "[~] Selecciona manualmente el archivo midiag.apk ..."
+            $fdDiag = New-Object System.Windows.Forms.OpenFileDialog
+            $fdDiag.Filter = "MiDiag APK (*.apk)|*.apk|Todos|*.*"
+            $fdDiag.Title  = "Selecciona midiag.apk"
+            if ($fdDiag.ShowDialog() -ne "OK") {
+                AdbLog "[~] Cancelado."
+                $btn.Enabled = $true; $btn.Text = "ACTIVAR DIAG XIAOMI"; return
+            }
+            $midiagPath = $fdDiag.FileName
+        }
+        AdbLog "[+] APK: $midiagPath"
+        AdbLog "[~] Instalando midiag.apk via ADB..."
+
+        $psiDiag = New-Object System.Diagnostics.ProcessStartInfo
+        $psiDiag.FileName               = "adb"
+        $psiDiag.Arguments              = "install -r `"$midiagPath`""
+        $psiDiag.RedirectStandardOutput = $true
+        $psiDiag.RedirectStandardError  = $true
+        $psiDiag.UseShellExecute        = $false
+        $psiDiag.CreateNoWindow         = $true
+        $pDiag = New-Object System.Diagnostics.Process
+        $pDiag.StartInfo = $psiDiag; $pDiag.Start() | Out-Null
+        $outDiag = $pDiag.StandardOutput.ReadToEnd()
+        $errDiag = $pDiag.StandardError.ReadToEnd()
+        $pDiag.WaitForExit()
+        $combDiag = ($outDiag + "`n" + $errDiag).Trim()
+        foreach ($line in ($combDiag -split "`n")) {
+            $l = $line.Trim(); if ($l) { AdbLog "    $l" }
+        }
+        AdbLog ""
+        if ($combDiag -imatch "Success") {
+            AdbLog "[OK] MiDiag instalada correctamente."
+            $midiagInstalled = $true
+        } else {
+            AdbLog "[!] Error al instalar MiDiag. Verifica el APK e intenta de nuevo."
+            $btn.Enabled = $true; $btn.Text = "ACTIVAR DIAG XIAOMI"; return
+        }
+    }
+
+    AdbLog ""
+
+    # Ejecutar MiDiag y lanzar actividad DIAG
+    if ($midiagInstalled) {
+        AdbLog "[~] Lanzando MiDiag en el equipo..."
+        & adb shell "am start -n com.longcheertel.midtest/com.longcheertel.midtest.Diag" 2>$null | Out-Null
+        Start-Sleep -Milliseconds 1500
+        AdbLog "[+] Comando DIAG enviado al equipo."
+        AdbLog ""
+        AdbLog "=============================================="
+        AdbLog "  PASOS SIGUIENTES:"
+        AdbLog "=============================================="
+        AdbLog ""
+        AdbLog "  [1]  El equipo deberia reiniciarse en modo DIAG"
+        AdbLog "       (puede tardar 5-15 segundos)."
+        AdbLog ""
+        AdbLog "  [2]  En Windows, abre el Administrador de Dispositivos:"
+        AdbLog "       -> Tecla Win + X -> Administrador de dispositivos"
+        AdbLog "       -> Busca en: Puertos (COM y LPT)"
+        AdbLog "       -> Debe aparecer: Qualcomm HS-USB QDLoader 9008"
+        AdbLog "          o similar con COM port asignado."
+        AdbLog ""
+        AdbLog "  [3]  Si NO aparece el puerto:"
+        AdbLog "       a) Desconecta y reconecta el cable USB"
+        AdbLog "       b) Espera 10 segundos y revisa de nuevo"
+        AdbLog "       c) Si persiste, presiona de nuevo ACTIVAR DIAG XIAOMI"
+        AdbLog "          para re-ejecutar el comando."
+        AdbLog ""
+        AdbLog "  [4]  Si el driver no esta instalado, Windows mostrara"
+        AdbLog "       el dispositivo como desconocido. Instala:"
+        AdbLog "       Qualcomm HS-USB QDLoader 9008 Driver"
+        AdbLog "       (disponible en paquetes de Xiaomi Flash Tool)"
+        AdbLog ""
+        AdbLog "=============================================="
+
+        # Abrir administrador de dispositivos automaticamente
+        AdbLog "[~] Abriendo Administrador de Dispositivos de Windows..."
+        try {
+            Start-Process "devmgmt.msc" -ErrorAction SilentlyContinue
+            AdbLog "[+] Administrador de Dispositivos abierto."
+        } catch {
+            AdbLog "[~] No se pudo abrir devmgmt.msc automaticamente."
+            AdbLog "[~] Abrelo manualmente: Win+X -> Administrador de dispositivos"
+        }
+
+        AdbLog ""
+        AdbLog "[OK] Proceso DIAG ejecutado. Verifica el puerto en el Adm. de Dispositivos."
+        $Global:lblStatus.Text = "  RNX TOOL PRO v2.3  |  DIAG EJECUTADO  |  $diagModel"
+    }
+
+    $btn.Enabled = $true; $btn.Text = "ACTIVAR DIAG XIAOMI"
+})
+
+# ==========================================================================
+# DEBLOAT XIAOMI  -  Eliminar apps basura MIUI con modo Basico / Completo
+# + restauracion individual de paquetes desinstalados
+# ==========================================================================
+$btnsA3[1].Add_Click({
+    $btn = $btnsA3[1]
+    $btn.Enabled = $false; $btn.Text = "EJECUTANDO..."
+    [System.Windows.Forms.Application]::DoEvents()
+    if (-not (Check-ADB)) { $btn.Enabled = $true; $btn.Text = "DEBLOAT XIAOMI"; return }
+
+    # ---- Listas de paquetes ----
+    # BASICO: solo apps claramente prescindibles, no afecta funcionalidad
+    $debloatBasico = @(
+        "com.miui.video",           # Mi Video
+        "com.miui.player",          # Mi Musica
+        "com.mi.globalbrowser",     # Mi Browser Global
+        "com.miui.msa.global",      # Mi Ads Services
+        "com.miui.analytics",       # MIUI Analytics
+        "com.miui.bugreport",       # Bug Reporter
+        "com.miui.fmservice",       # Radio FM (si no tiene antena)
+        "com.miui.gaming",          # Mi Gaming Turbo
+        "com.miui.calculator",      # Calculadora (tiene alternativa Google)
+        "com.miui.cleanmaster",     # Clean Master / Limpieza
+        "com.miui.compass",         # Brujula
+        "com.miui.weather",         # Clima Xiaomi
+        "com.miui.yellowpage",      # Paginas Amarillas
+        "com.miui.antivirus",       # Antivirus MIUI (Avast)
+        "com.miui.notes",           # Notas Xiaomi
+        "com.xiaomi.jr.promo",      # Xiaomi Financial Promo
+        "com.mihome.plugin.eleme",  # Plugin Eleme
+        "com.mfashion.global",      # Fashion Xiaomi
+        "com.mi.android.globalminusscreen" # Pantalla MI News
+    )
+
+    # COMPLETO: todo lo anterior + mas agresivo (cuentas, servicios cloud propietarios)
+    $debloatCompleto = $debloatBasico + @(
+        "com.facebook.katana",      # Facebook
+        "com.facebook.services",    # Facebook Services
+        "com.facebook.system",      # Facebook System
+        "com.facebook.appmanager",  # Facebook App Manager
+        "com.netflix.partner",      # Netflix preinstalado
+        "com.opera.preinstall",     # Opera Mini preinstalado
+        "com.bsp.catchlog",         # Log de sistema BSP
+        "com.xiaomi.simactivate.service", # Activacion SIM Xiaomi
+        "com.miui.cloudservice",    # Cloud MIUI
+        "com.miui.cloudbackup",     # Backup Cloud MIUI
+        "com.miui.miservice",       # Mi Service
+        "com.miui.voiceassist",     # Asistente de voz Xiao AI
+        "com.miui.aod",             # Always On Display MIUI
+        "cn.wps.xiaomi.abroad.lite" # WPS Office preinstalado
+    )
+
+    # ---- Seleccion de modo via dialogo ----
+    $modoForm = New-Object System.Windows.Forms.Form
+    $modoForm.Text = "DEBLOAT XIAOMI - RNX TOOL PRO"
+    $modoForm.Size = New-Object System.Drawing.Size(500, 340)
+    $modoForm.BackColor = [System.Drawing.Color]::FromArgb(20,20,20)
+    $modoForm.StartPosition = "CenterScreen"
+    $modoForm.FormBorderStyle = "FixedDialog"
+    $modoForm.ControlBox = $false
+    $modoForm.TopMost = $true
+
+    $lbTit = New-Object System.Windows.Forms.Label
+    $lbTit.Text = "SELECCIONA MODO DE DEBLOAT"
+    $lbTit.Location = New-Object System.Drawing.Point(16, 16)
+    $lbTit.Size = New-Object System.Drawing.Size(460, 24)
+    $lbTit.ForeColor = [System.Drawing.Color]::Lime
+    $lbTit.Font = New-Object System.Drawing.Font("Segoe UI",10,[System.Drawing.FontStyle]::Bold)
+    $modoForm.Controls.Add($lbTit)
+
+    $lbBasDesc = New-Object System.Windows.Forms.Label
+    $lbBasDesc.Text = "BASICO: Elimina apps basura y publicidad MIUI (seguro, sin tocar cuentas ni servicios criticos)"
+    $lbBasDesc.Location = New-Object System.Drawing.Point(16, 56)
+    $lbBasDesc.Size = New-Object System.Drawing.Size(460, 36)
+    $lbBasDesc.ForeColor = [System.Drawing.Color]::LightGray
+    $lbBasDesc.Font = New-Object System.Drawing.Font("Segoe UI",8.5)
+    $modoForm.Controls.Add($lbBasDesc)
+
+    $lbComDesc = New-Object System.Windows.Forms.Label
+    $lbComDesc.Text = "COMPLETO: Elimina todo lo anterior + Facebook, servicios cloud Xiaomi y mas (mas agresivo)"
+    $lbComDesc.Location = New-Object System.Drawing.Point(16, 106)
+    $lbComDesc.Size = New-Object System.Drawing.Size(460, 36)
+    $lbComDesc.ForeColor = [System.Drawing.Color]::LightGray
+    $lbComDesc.Font = New-Object System.Drawing.Font("Segoe UI",8.5)
+    $modoForm.Controls.Add($lbComDesc)
+
+    $lbRestDesc = New-Object System.Windows.Forms.Label
+    $lbRestDesc.Text = "RESTAURAR: Reinstala un paquete previamente desinstalado (ingresas el nombre del paquete)"
+    $lbRestDesc.Location = New-Object System.Drawing.Point(16, 156)
+    $lbRestDesc.Size = New-Object System.Drawing.Size(460, 36)
+    $lbRestDesc.ForeColor = [System.Drawing.Color]::LightGray
+    $lbRestDesc.Font = New-Object System.Drawing.Font("Segoe UI",8.5)
+    $modoForm.Controls.Add($lbRestDesc)
+
+    $script:debloatModo = $null
+
+    $mkBtn = {
+        param($txt, $clr, $x, $y, $action)
+        $b = New-Object System.Windows.Forms.Button
+        $b.Text = $txt; $b.Location = New-Object System.Drawing.Point($x,$y)
+        $b.Size = New-Object System.Drawing.Size(142,38); $b.FlatStyle = "Flat"
+        $b.ForeColor = $clr; $b.FlatAppearance.BorderColor = $clr
+        $b.BackColor = [System.Drawing.Color]::FromArgb(35,35,35)
+        $b.Font = New-Object System.Drawing.Font("Segoe UI",8,[System.Drawing.FontStyle]::Bold)
+        $b.Add_Click($action); $modoForm.Controls.Add($b)
+    }
+    & $mkBtn "BASICO"    ([System.Drawing.Color]::Lime)   16  210 { $script:debloatModo="BASICO";    $modoForm.Close() }
+    & $mkBtn "COMPLETO"  ([System.Drawing.Color]::Orange) 166 210 { $script:debloatModo="COMPLETO";  $modoForm.Close() }
+    & $mkBtn "RESTAURAR" ([System.Drawing.Color]::Cyan)   316 210 { $script:debloatModo="RESTAURAR"; $modoForm.Close() }
+
+    $btnCancel = New-Object System.Windows.Forms.Button
+    $btnCancel.Text = "CANCELAR"; $btnCancel.Location = New-Object System.Drawing.Point(170,264)
+    $btnCancel.Size = New-Object System.Drawing.Size(142,32); $btnCancel.FlatStyle = "Flat"
+    $btnCancel.ForeColor = [System.Drawing.Color]::Gray; $btnCancel.FlatAppearance.BorderColor = [System.Drawing.Color]::Gray
+    $btnCancel.BackColor = [System.Drawing.Color]::FromArgb(35,35,35)
+    $btnCancel.Font = New-Object System.Drawing.Font("Segoe UI",8)
+    $btnCancel.Add_Click({ $script:debloatModo = $null; $modoForm.Close() })
+    $modoForm.Controls.Add($btnCancel)
+
+    $modoForm.ShowDialog() | Out-Null
+
+    if (-not $script:debloatModo) {
+        $btn.Enabled = $true; $btn.Text = "DEBLOAT XIAOMI"; return
+    }
+
+    # ---- Modo RESTAURAR ----
+    if ($script:debloatModo -eq "RESTAURAR") {
+        Add-Type -AssemblyName Microsoft.VisualBasic
+        $pkg = [Microsoft.VisualBasic.Interaction]::InputBox(
+            "Ingresa el nombre del paquete a restaurar:`n(ej: com.miui.video)",
+            "RESTAURAR PAQUETE", "")
+        if (-not $pkg -or $pkg.Trim() -eq "") {
+            AdbLog "[~] Restauracion cancelada."
+            $btn.Enabled = $true; $btn.Text = "DEBLOAT XIAOMI"; return
+        }
+        $pkg = $pkg.Trim()
+        AdbLog ""
+        AdbLog "=============================================="
+        AdbLog "  RESTAURAR PAQUETE - RNX TOOL PRO"
+        AdbLog "=============================================="
+        AdbLog "[*] Paquete: $pkg"
+        $res = (& adb shell cmd package install-existing $pkg 2>&1) -join ""
+        if ($res -imatch "Success|installed") {
+            AdbLog "[OK] $pkg restaurado correctamente."
+        } else {
+            AdbLog "[!] Error o paquete no encontrado: $res"
+            AdbLog "[~] Verifica que el nombre del paquete sea correcto."
+        }
+        $btn.Enabled = $true; $btn.Text = "DEBLOAT XIAOMI"; return
+    }
+
+    # ---- Modo BASICO o COMPLETO ----
+    $lista = if ($script:debloatModo -eq "COMPLETO") { $debloatCompleto } else { $debloatBasico }
+
+    AdbLog ""
+    AdbLog "=============================================="
+    AdbLog "  DEBLOAT XIAOMI [$($script:debloatModo)] - RNX TOOL PRO"
+    AdbLog "=============================================="
+    AdbLog "[*] Verificando dispositivo..."
+
+    if (-not (Check-ADB)) { $btn.Enabled = $true; $btn.Text = "DEBLOAT XIAOMI"; return }
+
+    $brand = (& adb shell getprop ro.product.brand 2>$null).Trim().ToUpper()
+    $model = (& adb shell getprop ro.product.model 2>$null).Trim()
+    AdbLog "[+] Dispositivo: $brand $model"
+
+    if ($brand -notmatch "XIAOMI|REDMI|POCO") {
+        $confirm = [System.Windows.Forms.MessageBox]::Show(
+            "El dispositivo detectado ($brand $model) no parece ser Xiaomi/Redmi/POCO.`n`nDeseas continuar de todas formas?",
+            "ADVERTENCIA", "YesNo", "Warning")
+        if ($confirm -ne "Yes") {
+            AdbLog "[~] Cancelado por el usuario."
+            $btn.Enabled = $true; $btn.Text = "DEBLOAT XIAOMI"; return
+        }
+    }
+
+    # Obtener lista de paquetes instalados una sola vez
+    AdbLog "[*] Obteniendo lista de paquetes instalados..."
+    $pkgsInstalados = (& adb shell pm list packages 2>$null) -join "`n"
+
+    $total = $lista.Count
+    $ok = 0; $skip = 0; $fail = 0
+
+    foreach ($i in 0..($total-1)) {
+        $pkg = $lista[$i]
+        $num = $i + 1
+        [System.Windows.Forms.Application]::DoEvents()
+
+        # Verificar si esta instalado
+        if ($pkgsInstalados -notmatch [regex]::Escape($pkg)) {
+            AdbLog "  [$num/$total] $pkg - NO INSTALADO (omitido)"
+            $skip++; continue
+        }
+
+        AdbLog "  [$num/$total] Eliminando: $pkg..."
+        $res = (& adb shell pm uninstall -k --user 0 $pkg 2>&1) -join ""
+        if ($res -imatch "Success") {
+            AdbLog "           [OK]"
+            $ok++
+        } else {
+            AdbLog "           [!] Error: $($res.Trim())"
+            $fail++
+        }
+    }
+
+    AdbLog ""
+    AdbLog "=============================================="
+    AdbLog "  RESUMEN DEBLOAT XIAOMI [$($script:debloatModo)]"
+    AdbLog "=============================================="
+    AdbLog "  Eliminados OK : $ok"
+    AdbLog "  No instalados : $skip"
+    AdbLog "  Con error     : $fail"
+    AdbLog "=============================================="
+    AdbLog ""
+
+    $reinicio = [System.Windows.Forms.MessageBox]::Show(
+        "Debloat completado.`n`nEliminados: $ok  |  Errores: $fail`n`nDeseas reiniciar el dispositivo ahora?",
+        "DEBLOAT COMPLETADO", "YesNo", "Information")
+    if ($reinicio -eq "Yes") {
+        AdbLog "[*] Reiniciando dispositivo..."
+        & adb reboot 2>$null
+        AdbLog "[OK] Reinicio enviado."
+    }
+
+    $btn.Enabled = $true; $btn.Text = "DEBLOAT XIAOMI"
+})
+
+# ==========================================================================
+# RESET RAPIDO PARA ENTREGAS
+# Limpia cuentas Google, Xiaomi y cache sin hacer factory reset
+# ==========================================================================
+$btnsA4[0].Add_Click({
+    $btn = $btnsA4[0]
+    $btn.Enabled = $false; $btn.Text = "EJECUTANDO..."
+    [System.Windows.Forms.Application]::DoEvents()
+
+    AdbLog ""
+    AdbLog "=============================================="
+    AdbLog "  RESET RAPIDO ENTREGA v3 - RNX TOOL PRO"
+    AdbLog "=============================================="
+    AdbLog "[*] Objetivo: dejar equipo limpio SIN factory reset"
+    AdbLog ""
+
+    if (-not (Check-ADB)) { $btn.Enabled = $true; $btn.Text = "RESET RAPIDO ENTREGA"; return }
+
+    $brand  = (& adb shell getprop ro.product.brand  2>$null).Trim().ToUpper()
+    $model  = (& adb shell getprop ro.product.model  2>$null).Trim()
+    $serial = (& adb get-serialno 2>$null).Trim()
+    AdbLog "[+] Dispositivo : $brand $model"
+    AdbLog "[+] Serial      : $serial"
+    AdbLog ""
+
+    $confirm = [System.Windows.Forms.MessageBox]::Show(
+        "RESET RAPIDO PARA ENTREGA v3`n`nDispositivo: $brand $model`n`nEsto limpiara:`n  - Cuentas Google / Xiaomi / Samsung / Oppo / Vivo / Realme / OnePlus / Motorola`n  - Historial de llamadas y mensajes SMS`n  - Cache y datos Chrome + buscadores`n  - Apps de terceros (excepto WhatsApp / Facebook / Messenger / TikTok)`n  - Galeria, contactos y referencias de fotos`n  - Knox/enrollment Samsung`n  - Ajustes de pantalla activa`n  - Cache global del sistema`n`nNO borra el sistema ni apps del fabricante.`n`nConfirmas?",
+        "RESET RAPIDO v3", "YesNo", "Question")
+    if ($confirm -ne "Yes") {
+        AdbLog "[~] Cancelado."
+        $btn.Enabled = $true; $btn.Text = "RESET RAPIDO ENTREGA"; return
+    }
+
+    $paso = 0
+
+    function RR-Run($cmd, $etiqueta) {
+        $raw = & adb shell $cmd 2>&1
+        $ok  = "$raw" -imatch "Success|Done|deleted|^$|rows affected"
+        AdbLog "      $(if($ok){'[OK]'}else{'[~]'}) $etiqueta"
+    }
+
+    # -----------------------------------------------------------------------
+    # PASO 1: Google - GMS / GSF / Play Store / Chrome / cuentas
+    # -----------------------------------------------------------------------
+    $paso++; AdbLog "[$paso] Limpiando servicios Google y cuenta..."
+    foreach ($pkg in @(
+        "com.google.android.gms",
+        "com.google.android.gsf",
+        "com.android.vending",
+        "com.google.android.gms.policy_sidecar_aps",
+        "com.google.android.googlequicksearchbox",
+        "com.google.android.gms.persistent",
+        "com.google.android.syncadapters.contacts",
+        "com.google.android.syncadapters.calendar",
+        "com.google.android.backuptransport",
+        "com.google.android.feedback",
+        "com.google.android.partnersetup",
+        "com.google.android.setupwizard",
+        "com.google.android.apps.restore",
+        "com.android.chrome",
+        "com.google.android.apps.chrome",
+        "com.google.android.youtube",
+        "com.google.android.apps.maps",
+        "com.google.android.apps.docs",
+        "com.google.android.apps.photos",
+        "com.google.android.talk",
+        "com.google.android.gm"
+    )) { & adb shell pm clear $pkg 2>$null | Out-Null; AdbLog "      [OK] $pkg" }
+    # Borrar cuentas Google via content provider (quita vinculacion de cuenta)
+    RR-Run "content delete --uri content://com.google.android.gsf.login/accounts" "Cuentas GSF borradas"
+    # Forzar borrado de tokens de sincronizacion de cuentas
+    RR-Run "am broadcast -a com.google.android.gms.auth.GOOGLE_SIGN_OUT" "Sign-out broadcast enviado"
+    AdbLog "      [OK] Cuenta Google desvinculada"
+
+    # -----------------------------------------------------------------------
+    # PASO 2: Xiaomi / MIUI
+    # -----------------------------------------------------------------------
+    $paso++; AdbLog "[$paso] Limpiando cuenta Xiaomi / MIUI..."
+    foreach ($pkg in @(
+        "com.xiaomi.account","com.miui.cloudservice","com.miui.cloudbackup",
+        "com.xiaomi.finddevice","com.miui.miservice","com.miui.hybrid","com.miui.analytics"
+    )) { & adb shell pm clear $pkg 2>$null | Out-Null; AdbLog "      [OK] $pkg" }
+
+    # -----------------------------------------------------------------------
+    # PASO 3: Samsung Account + Knox
+    # -----------------------------------------------------------------------
+    $paso++; AdbLog "[$paso] Limpiando cuenta Samsung / Knox..."
+    foreach ($pkg in @(
+        "com.osp.app.signin","com.samsung.android.samsungaccount",
+        "com.samsung.android.knox.containeragent","com.samsung.android.mdm",
+        "com.sec.enterprise.knox.cloudmdm.samsungknox","com.sec.android.soagent"
+    )) { & adb shell pm clear $pkg 2>$null | Out-Null; AdbLog "      [OK] $pkg" }
+    RR-Run "settings put global knox_enrollment_source 0" "Knox enrollment reset"
+
+    # -----------------------------------------------------------------------
+    # PASO 4: Oppo / Realme / OnePlus / Vivo / Motorola
+    # -----------------------------------------------------------------------
+    $paso++; AdbLog "[$paso] Limpiando cuentas Oppo / Realme / OnePlus / Vivo / Motorola..."
+    foreach ($pkg in @(
+        "com.heytap.account","com.oplus.account","com.coloros.account",
+        "com.realme.account","net.oneplus.account","com.oneplus.account",
+        "com.vivo.account","com.vivo.cloudservice","com.bbk.account",
+        "com.motorola.ccc","com.motorola.motosync"
+    )) { & adb shell pm clear $pkg 2>$null | Out-Null; AdbLog "      [OK] $pkg" }
+
+    # -----------------------------------------------------------------------
+    # PASO 5: Historial de llamadas
+    # -----------------------------------------------------------------------
+    $paso++; AdbLog "[$paso] Borrando historial de llamadas..."
+    RR-Run "content delete --uri content://call_log/calls" "Historial de llamadas eliminado"
+    # Fallback Android 11+ (CallLog provider diferente)
+    RR-Run "content delete --uri content://com.android.contacts.calllogbackup.CallLogBackupContract/call_log" "CallLog backup borrado"
+    AdbLog "      [OK] Historial de llamadas limpio"
+
+    # -----------------------------------------------------------------------
+    # PASO 6: Historial de mensajes SMS / MMS
+    # -----------------------------------------------------------------------
+    $paso++; AdbLog "[$paso] Borrando historial de mensajes SMS/MMS..."
+    RR-Run "content delete --uri content://sms"  "SMS eliminados"
+    RR-Run "content delete --uri content://mms"  "MMS eliminados"
+    # Limpiar cache de app de mensajes (Samsung, MIUI, AOSP)
+    foreach ($pkg in @(
+        "com.android.mms","com.samsung.android.messaging",
+        "com.google.android.apps.messaging","com.miui.sms",
+        "com.android.messaging"
+    )) { & adb shell pm clear $pkg 2>$null | Out-Null }
+    AdbLog "      [OK] SMS/MMS y cache de mensajeria limpios"
+
+    # -----------------------------------------------------------------------
+    # PASO 7: Cache y datos Chrome + buscadores
+    # -----------------------------------------------------------------------
+    $paso++; AdbLog "[$paso] Limpiando Chrome y buscadores..."
+    foreach ($pkg in @(
+        "com.android.chrome","com.google.android.apps.chrome",
+        "com.sec.android.app.sbrowser","com.mi.globalbrowser",
+        "com.opera.mini.native","com.opera.browser",
+        "com.UCMobile.intl","com.uc.browser.en",
+        "org.mozilla.firefox","com.brave.browser",
+        "com.microsoft.emmx","com.duckduckgo.mobile.android",
+        "com.miui.yellowpage"
+    )) { & adb shell pm clear $pkg 2>$null | Out-Null; AdbLog "      [OK] $pkg" }
+    AdbLog "      [OK] Navegadores limpios"
+
+    # -----------------------------------------------------------------------
+    # PASO 8: Desinstalar apps de terceros (excepto las protegidas)
+    # -----------------------------------------------------------------------
+    $paso++; AdbLog "[$paso] Desinstalando apps de terceros (excepto WhatsApp / Facebook / Messenger / TikTok)..."
+
+    $pkgsProtegidos = @(
+        "com.whatsapp","com.whatsapp.w4b",
+        "com.facebook.katana","com.facebook.lite",
+        "com.facebook.orca",
+        "com.zhiliaoapp.musically","com.ss.android.ugc.trill"
+    )
+    $pkgsProtegidosSet = [System.Collections.Generic.HashSet[string]]::new()
+    foreach ($p in $pkgsProtegidos) { $pkgsProtegidosSet.Add($p) | Out-Null }
+
+    # Solo apps de usuario (3er parties): pm list packages -3
+    $terceros = (& adb shell "pm list packages -3" 2>$null) | ForEach-Object {
+        "$_".Trim() -replace "^package:",""
+    } | Where-Object { $_.Trim() -ne "" }
+
+    $desinstaladas = 0; $omitidas = 0
+    foreach ($pkg in $terceros) {
+        $pkg = $pkg.Trim()
+        if ($pkgsProtegidosSet.Contains($pkg)) {
+            # Protegidas: solo limpiar cache y datos
+            & adb shell pm clear $pkg 2>$null | Out-Null
+            AdbLog "      [PROT] $pkg -> cache+datos limpiados"
+            $omitidas++
+            continue
+        }
+        $rc = (& adb shell "pm uninstall $pkg" 2>&1) -join ""
+        if ($rc -imatch "Success") {
+            AdbLog "      [DEL] $pkg"
+            $desinstaladas++
+        } else {
+            # Si falla uninstall, al menos limpiar datos
+            & adb shell pm clear $pkg 2>$null | Out-Null
+            AdbLog "      [CLR] $pkg (no desinstalable, cache limpiado)"
+        }
+        [System.Windows.Forms.Application]::DoEvents()
+    }
+    AdbLog "      [OK] Desinstaladas: $desinstaladas | Protegidas (cache): $omitidas"
+
+    # -----------------------------------------------------------------------
+    # PASO 9: Contactos
+    # -----------------------------------------------------------------------
+    $paso++; AdbLog "[$paso] Borrando contactos..."
+    RR-Run "content delete --uri content://com.android.contacts/contacts" "Contactos eliminados"
+
+    # -----------------------------------------------------------------------
+    # PASO 10: Galeria y referencias de fotos
+    # -----------------------------------------------------------------------
+    $paso++; AdbLog "[$paso] Limpiando galeria..."
+    foreach ($pkg in @(
+        "com.android.gallery3d","com.miui.gallery",
+        "com.samsung.android.gallery.app","com.google.android.apps.photos",
+        "com.sec.android.gallery3d"
+    )) { & adb shell pm clear $pkg 2>$null | Out-Null; AdbLog "      [OK] $pkg" }
+    RR-Run "content delete --uri content://media/external/images/media" "Referencias de fotos borradas"
+
+    # -----------------------------------------------------------------------
+    # PASO 11: Ajustes de sistema
+    # -----------------------------------------------------------------------
+    $paso++; AdbLog "[$paso] Reseteando ajustes de sistema..."
+    RR-Run "settings put global stay_on_while_plugged_in 0" "Pantalla siempre activa = OFF"
+    RR-Run "settings put secure screensaver_enabled 0"      "Daydream OFF"
+    RR-Run "settings put global wifi_sleep_policy 2"        "WiFi sleep policy = normal"
+    RR-Run "settings delete secure default_input_method"    "Teclado default reset"
+
+    # -----------------------------------------------------------------------
+    # PASO 12: Cache global
+    # -----------------------------------------------------------------------
+    $paso++; AdbLog "[$paso] Limpiando cache global del sistema..."
+    & adb shell pm trim-caches 999999999999 2>$null | Out-Null
+    AdbLog "      [OK] Cache global limpiado"
+
+    # -----------------------------------------------------------------------
+    # PASO 13: Soft reset MASTER_CLEAR_NOTIFICATION
+    # -----------------------------------------------------------------------
+    $paso++; AdbLog "[$paso] Enviando notificacion de limpieza al sistema..."
+    RR-Run "am broadcast -a android.intent.action.MASTER_CLEAR_NOTIFICATION" "MASTER_CLEAR_NOTIFICATION enviado"
+
+    AdbLog ""
+    AdbLog "=============================================="
+    AdbLog "  RESULTADO RESET RAPIDO v3"
+    AdbLog "=============================================="
+    AdbLog "  [OK] Cuentas Google / GSF borradas"
+    AdbLog "  [OK] Xiaomi / Samsung / Oppo / Vivo / Realme / OnePlus / Motorola"
+    AdbLog "  [OK] Historial de llamadas eliminado"
+    AdbLog "  [OK] Historial SMS/MMS eliminado"
+    AdbLog "  [OK] Chrome y buscadores limpios"
+    AdbLog "  [OK] Apps de terceros desinstaladas: $desinstaladas"
+    AdbLog "  [OK] Apps protegidas (cache limpiado): $omitidas"
+    AdbLog "  [OK] Contactos eliminados"
+    AdbLog "  [OK] Galeria y fotos limpias"
+    AdbLog "  [OK] Ajustes de pantalla reseteados"
+    AdbLog "  [OK] Cache del sistema limpio"
+    AdbLog "=============================================="
+
+    $reinicio = [System.Windows.Forms.MessageBox]::Show(
+        "Reset v3 completado.`n`nDesinstaladas : $desinstaladas apps de terceros`nProtegidas    : $omitidas (cache limpiado)`n`nEquipo listo para entrega.`nDeseas reiniciarlo ahora?",
+        "RESET COMPLETADO", "YesNo", "Information")
+    if ($reinicio -eq "Yes") {
+        AdbLog "[*] Reiniciando dispositivo..."
+        & adb reboot 2>$null
+        AdbLog "[OK] Reinicio enviado."
+    }
+
+    $btn.Enabled = $true; $btn.Text = "RESET RAPIDO ENTREGA"
+})
+# ==========================================================================
+# INSTALAR APKs DESDE CARPETA LOCAL
+# Escanea carpeta local de APKs, muestra lista con checkboxes, instala seleccionados
+# Guarda ruta preferida en rnx_prefs.json
+# ==========================================================================
+$btnsA4[1].Add_Click({
+    $btn = $btnsA4[1]
+    $btn.Enabled = $false; $btn.Text = "CARGANDO..."
+    [System.Windows.Forms.Application]::DoEvents()
+
+    AdbLog ""
+    AdbLog "=============================================="
+    AdbLog "  INSTALAR APKs LOCAL - RNX TOOL PRO"
+    AdbLog "=============================================="
+
+    if (-not (Check-ADB)) { $btn.Enabled = $true; $btn.Text = "INSTALAR APKs"; return }
+
+    # ---- Cargar / guardar preferencias ----
+    $prefsPath = Join-Path $script:SCRIPT_ROOT "rnx_prefs.json"
+    $prefs = @{ ApkFolder = "" }
+    if (Test-Path $prefsPath) {
+        try { $prefs = Get-Content $prefsPath -Raw | ConvertFrom-Json -AsHashtable } catch {}
+    }
+
+    # ---- Carpeta default ----
+    $defaultApkDir = Join-Path $script:SCRIPT_ROOT "APKs"
+    if (-not (Test-Path $defaultApkDir)) { New-Item $defaultApkDir -ItemType Directory -Force | Out-Null }
+
+    $apkRoot = if ($prefs.ApkFolder -and (Test-Path $prefs.ApkFolder)) {
+        $prefs.ApkFolder
+    } else {
+        $defaultApkDir
+    }
+
+    # ---- Formulario de seleccion de carpeta + lista ----
+    $frmApk = New-Object System.Windows.Forms.Form
+    $frmApk.Text = "INSTALAR APKs - RNX TOOL PRO"
+    $frmApk.ClientSize = New-Object System.Drawing.Size(600, 520)
+    $frmApk.BackColor  = [System.Drawing.Color]::FromArgb(18,18,18)
+    $frmApk.FormBorderStyle = "FixedDialog"
+    $frmApk.StartPosition   = "CenterScreen"
+    $frmApk.MaximizeBox = $false
+
+    # Header label
+    $lbHdr = New-Object System.Windows.Forms.Label
+    $lbHdr.Text = "INSTALAR APKs DESDE CARPETA LOCAL"
+    $lbHdr.Location = New-Object System.Drawing.Point(14,12)
+    $lbHdr.Size     = New-Object System.Drawing.Size(572,20)
+    $lbHdr.ForeColor = [System.Drawing.Color]::FromArgb(180,80,255)
+    $lbHdr.Font = New-Object System.Drawing.Font("Segoe UI",10,[System.Drawing.FontStyle]::Bold)
+    $frmApk.Controls.Add($lbHdr)
+
+    # Carpeta label
+    $lbDir = New-Object System.Windows.Forms.Label
+    $lbDir.Text = "Carpeta: $apkRoot"
+    $lbDir.Location = New-Object System.Drawing.Point(14,38)
+    $lbDir.Size     = New-Object System.Drawing.Size(480,16)
+    $lbDir.ForeColor = [System.Drawing.Color]::LightGray
+    $lbDir.Font = New-Object System.Drawing.Font("Consolas",7.5)
+    $frmApk.Controls.Add($lbDir)
+
+    # Boton cambiar carpeta
+    $btnCarpeta = New-Object System.Windows.Forms.Button
+    $btnCarpeta.Text = "CAMBIAR"
+    $btnCarpeta.Location = New-Object System.Drawing.Point(500,32)
+    $btnCarpeta.Size     = New-Object System.Drawing.Size(86,24)
+    $btnCarpeta.FlatStyle = "Flat"
+    $btnCarpeta.ForeColor = [System.Drawing.Color]::Cyan
+    $btnCarpeta.FlatAppearance.BorderColor = [System.Drawing.Color]::Cyan
+    $btnCarpeta.BackColor = [System.Drawing.Color]::FromArgb(28,28,28)
+    $btnCarpeta.Font = New-Object System.Drawing.Font("Segoe UI",7.5,[System.Drawing.FontStyle]::Bold)
+    $frmApk.Controls.Add($btnCarpeta)
+
+    # Separador
+    $lbSep = New-Object System.Windows.Forms.Label
+    $lbSep.Location = New-Object System.Drawing.Point(14,60); $lbSep.Size = New-Object System.Drawing.Size(572,1)
+    $lbSep.BorderStyle = "Fixed3D"; $frmApk.Controls.Add($lbSep)
+
+    # CheckedListBox con APKs
+    $clb = New-Object System.Windows.Forms.CheckedListBox
+    $clb.Location = New-Object System.Drawing.Point(14,68)
+    $clb.Size     = New-Object System.Drawing.Size(572,340)
+    $clb.BackColor = [System.Drawing.Color]::FromArgb(26,26,26)
+    $clb.ForeColor = [System.Drawing.Color]::LightGray
+    $clb.Font = New-Object System.Drawing.Font("Consolas",8.5)
+    $clb.CheckOnClick = $true
+    $frmApk.Controls.Add($clb)
+
+    # Label estado / info
+    $lbStatus = New-Object System.Windows.Forms.Label
+    $lbStatus.Location = New-Object System.Drawing.Point(14,416)
+    $lbStatus.Size     = New-Object System.Drawing.Size(572,16)
+    $lbStatus.ForeColor = [System.Drawing.Color]::FromArgb(100,100,100)
+    $lbStatus.Font = New-Object System.Drawing.Font("Consolas",7.5)
+    $frmApk.Controls.Add($lbStatus)
+
+    # ProgressBar
+    $bar = New-Object System.Windows.Forms.ProgressBar
+    $bar.Location = New-Object System.Drawing.Point(14,436)
+    $bar.Size     = New-Object System.Drawing.Size(572,18)
+    $bar.Style = "Continuous"; $bar.Minimum = 0; $bar.Maximum = 100; $bar.Value = 0
+    $frmApk.Controls.Add($bar)
+
+    # Botones inferiores
+    $btnTodos = New-Object System.Windows.Forms.Button
+    $btnTodos.Text = "TODOS"; $btnTodos.Location = New-Object System.Drawing.Point(14,462)
+    $btnTodos.Size = New-Object System.Drawing.Size(70,28); $btnTodos.FlatStyle = "Flat"
+    $btnTodos.ForeColor = [System.Drawing.Color]::LightGray
+    $btnTodos.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(60,60,60)
+    $btnTodos.BackColor = [System.Drawing.Color]::FromArgb(30,30,30)
+    $btnTodos.Font = New-Object System.Drawing.Font("Segoe UI",7.5,[System.Drawing.FontStyle]::Bold)
+    $frmApk.Controls.Add($btnTodos)
+
+    $btnNinguno = New-Object System.Windows.Forms.Button
+    $btnNinguno.Text = "NINGUNO"; $btnNinguno.Location = New-Object System.Drawing.Point(90,462)
+    $btnNinguno.Size = New-Object System.Drawing.Size(70,28); $btnNinguno.FlatStyle = "Flat"
+    $btnNinguno.ForeColor = [System.Drawing.Color]::LightGray
+    $btnNinguno.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(60,60,60)
+    $btnNinguno.BackColor = [System.Drawing.Color]::FromArgb(30,30,30)
+    $btnNinguno.Font = New-Object System.Drawing.Font("Segoe UI",7.5,[System.Drawing.FontStyle]::Bold)
+    $frmApk.Controls.Add($btnNinguno)
+
+    $btnInstalar = New-Object System.Windows.Forms.Button
+    $btnInstalar.Text = "INSTALAR SELECCIONADOS"
+    $btnInstalar.Location = New-Object System.Drawing.Point(310,460)
+    $btnInstalar.Size     = New-Object System.Drawing.Size(200,30)
+    $btnInstalar.FlatStyle = "Flat"
+    $btnInstalar.ForeColor = [System.Drawing.Color]::FromArgb(180,80,255)
+    $btnInstalar.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(180,80,255)
+    $btnInstalar.BackColor = [System.Drawing.Color]::FromArgb(30,20,40)
+    $btnInstalar.Font = New-Object System.Drawing.Font("Segoe UI",8,[System.Drawing.FontStyle]::Bold)
+    $frmApk.Controls.Add($btnInstalar)
+
+    $btnCerrar = New-Object System.Windows.Forms.Button
+    $btnCerrar.Text = "CERRAR"
+    $btnCerrar.Location = New-Object System.Drawing.Point(516,460)
+    $btnCerrar.Size     = New-Object System.Drawing.Size(70,30)
+    $btnCerrar.FlatStyle = "Flat"
+    $btnCerrar.ForeColor = [System.Drawing.Color]::FromArgb(180,60,60)
+    $btnCerrar.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(180,60,60)
+    $btnCerrar.BackColor = [System.Drawing.Color]::FromArgb(30,18,18)
+    $btnCerrar.Font = New-Object System.Drawing.Font("Segoe UI",8,[System.Drawing.FontStyle]::Bold)
+    $frmApk.Controls.Add($btnCerrar)
+
+    # ---- Mapa APK: label -> FileInfo ----
+    $apkMap = @{}
+
+    # ---- Funcion: escanear carpeta y poblar lista ----
+    function Cargar-APKs($carpeta) {
+        $clb.Items.Clear(); $apkMap.Clear()
+        $apks = Get-ChildItem $carpeta -Recurse -Filter "*.apk" -EA SilentlyContinue |
+                Sort-Object Name
+        if ($apks.Count -eq 0) {
+            $lbStatus.Text = "No se encontraron APKs en: $carpeta"
+            return
+        }
+        foreach ($apk in $apks) {
+            $sz    = [math]::Round($apk.Length / 1MB, 1)
+            $label = "$($apk.Name)  [$sz MB]"
+            $clb.Items.Add($label, $false) | Out-Null
+            $apkMap[$label] = $apk
+        }
+        $lbStatus.Text = "$($apks.Count) APK(s) encontrados en: $carpeta"
+        [System.Windows.Forms.Application]::DoEvents()
+    }
+
+    # Cargar inicial
+    Cargar-APKs $apkRoot
+
+    # ---- Evento: cambiar carpeta ----
+    $btnCarpeta.Add_Click({
+        $fb = New-Object System.Windows.Forms.FolderBrowserDialog
+        $fb.Description = "Selecciona carpeta raiz de APKs"
+        $fb.SelectedPath = $apkRoot
+        if ($fb.ShowDialog() -ne "OK") { return }
+        $script:_apkRoot = $fb.SelectedPath
+        $lbDir.Text = "Carpeta: $($script:_apkRoot)"
+        Cargar-APKs $script:_apkRoot
+        # Guardar preferencia
+        try {
+            $p2 = @{ ApkFolder = $script:_apkRoot } | ConvertTo-Json
+            Set-Content $prefsPath $p2 -Encoding UTF8
+        } catch {}
+    })
+    $script:_apkRoot = $apkRoot
+
+    $btnTodos.Add_Click({
+        for ($i=0; $i -lt $clb.Items.Count; $i++) { $clb.SetItemChecked($i, $true) }
+    })
+    $btnNinguno.Add_Click({
+        for ($i=0; $i -lt $clb.Items.Count; $i++) { $clb.SetItemChecked($i, $false) }
+    })
+    $btnCerrar.Add_Click({ $frmApk.Close() })
+
+    # ---- Instalar seleccionados ----
+    $btnInstalar.Add_Click({
+        $seleccionados = @()
+        for ($i=0; $i -lt $clb.Items.Count; $i++) {
+            if ($clb.GetItemChecked($i)) { $seleccionados += $clb.Items[$i] }
+        }
+        if ($seleccionados.Count -eq 0) {
+            [System.Windows.Forms.MessageBox]::Show("Selecciona al menos un APK.","Aviso","OK","Warning") | Out-Null
+            return
+        }
+
+        $btnInstalar.Enabled = $false; $btnInstalar.Text = "INSTALANDO..."
+        $bar.Value = 0
+        $total = $seleccionados.Count; $ok = 0; $fail = 0
+
+        AdbLog ""
+        AdbLog "  Instalando $total APK(s)..."
+
+        for ($i=0; $i -lt $seleccionados.Count; $i++) {
+            $label = $seleccionados[$i]
+            $apkFile = $apkMap[$label]
+            $pct = [int](($i / $total) * 100)
+            $bar.Value = $pct
+            $lbStatus.Text = "[$($i+1)/$total] Instalando: $($apkFile.Name)"
+            [System.Windows.Forms.Application]::DoEvents()
+
+            AdbLog "  [$($i+1)/$total] $($apkFile.Name)"
+            $rc = & adb install -r "$($apkFile.FullName)" 2>&1
+            $exito = "$rc" -imatch "Success"
+            if ($exito) {
+                AdbLog "    [OK] Instalado correctamente"
+                $ok++
+            } else {
+                $rcStr = "$rc"
+                if ($rcStr -match "INSTALL_FAILED_[A-Z_]+") { $motivo = $Matches[0] -replace "INSTALL_FAILED_","" } else { $motivo = $rcStr.Trim() }
+                AdbLog "    [!] Fallo: $motivo"
+                $fail++
+            }
+            [System.Windows.Forms.Application]::DoEvents()
+        }
+
+        $bar.Value = 100
+        $lbStatus.Text = "Listo: $ok OK / $fail fallidos"
+        AdbLog ""
+        AdbLog "  Resultado: $ok instalados, $fail fallidos"
+        AdbLog "=============================================="
+
+        $btnInstalar.Enabled = $true; $btnInstalar.Text = "INSTALAR SELECCIONADOS"
+        [System.Windows.Forms.MessageBox]::Show(
+            "Instalacion completada.`n`nInstalados : $ok`nFallidos   : $fail",
+            "INSTALAR APKs", "OK", "Information") | Out-Null
+    })
+
+    # Guardar ruta actual como preferencia al abrir
+    try {
+        $pSave = @{ ApkFolder = $apkRoot } | ConvertTo-Json
+        Set-Content $prefsPath $pSave -Encoding UTF8
+    } catch {}
+
+    $frmApk.ShowDialog() | Out-Null
+
+    $btn.Enabled = $true; $btn.Text = "INSTALAR APKs"
+})
+
 # ---- INSTALAR MAGISK (seleccion v24 / v27 con autodeteccion por modelo) ----
 $btnsA2[4].Add_Click({
     $btn = $btnsA2[4]
-
+    $btn.Enabled = $false; $btn.Text = "INSTALANDO..."
     $Global:logAdb.Clear()
     AdbLog "=============================================="
     AdbLog "   INSTALAR MAGISK  -  RNX TOOL PRO"
@@ -2923,205 +4834,202 @@ $btnsA2[4].Add_Click({
     AdbLog "=============================================="
     AdbLog ""
 
-    # Verificar ADB
     if (-not (Check-ADB)) {
         AdbLog "[!] No hay dispositivo ADB conectado."
         AdbLog "    Habilita Depuracion USB y reconecta el equipo."
-        return
+        $btn.Enabled = $true; $btn.Text = "INSTALAR MAGISK"; return
     }
 
-    # Leer modelo para autodeteccion de version
     $instModel  = (& adb shell getprop ro.product.model  2>$null).Trim()
     $instSerial = (& adb get-serialno 2>$null).Trim()
     AdbLog "[+] Dispositivo : $instModel  ($instSerial)"
     AdbLog ""
     [System.Windows.Forms.Application]::DoEvents()
 
-    # Autodetectar si es modelo legacy (tabla de AUTOROOT)
     $isLegacyModel = $false
     foreach ($leg in $script:MAGISK_LEGACY_MODELS) {
         if ($instModel.Trim().ToUpper() -eq $leg.ToUpper()) { $isLegacyModel = $true; break }
     }
     $autoSelIdx = if ($isLegacyModel) { 0 } else { 1 }
     $autoLabel  = if ($isLegacyModel) { "v24 (legacy detectado: $instModel)" } else { "v27 (recomendado)" }
-    AdbLog "[*] Autodeteccion  : Magisk $autoLabel"
+    AdbLog "[*] Autodeteccion : Magisk $autoLabel"
     AdbLog ""
 
-    # ---- Dropdown de version ----
     $dlgForm = New-Object Windows.Forms.Form
-    $dlgForm.Text            = "Seleccionar version de Magisk"
-    $dlgForm.ClientSize      = New-Object System.Drawing.Size(380, 175)
-    $dlgForm.BackColor       = [System.Drawing.Color]::FromArgb(28,28,28)
-    $dlgForm.FormBorderStyle = "FixedDialog"
-    $dlgForm.StartPosition   = "CenterScreen"
-    $dlgForm.MaximizeBox     = $false; $dlgForm.MinimizeBox = $false
-    $dlgForm.TopMost         = $true
+    $dlgForm.Text = "Seleccionar version de Magisk"
+    $dlgForm.ClientSize = New-Object System.Drawing.Size(380, 175)
+    $dlgForm.BackColor = [System.Drawing.Color]::FromArgb(28,28,28)
+    $dlgForm.FormBorderStyle = "FixedDialog"; $dlgForm.StartPosition = "CenterScreen"
+    $dlgForm.MaximizeBox = $false; $dlgForm.MinimizeBox = $false; $dlgForm.TopMost = $true
 
     $lblDev = New-Object Windows.Forms.Label
-    $lblDev.Text      = "Dispositivo: $instModel"
-    $lblDev.Location  = New-Object System.Drawing.Point(14, 12)
-    $lblDev.Size      = New-Object System.Drawing.Size(352, 16)
-    $lblDev.ForeColor = [System.Drawing.Color]::FromArgb(160,160,160)
-    $lblDev.Font      = New-Object System.Drawing.Font("Segoe UI", 8)
-    $dlgForm.Controls.Add($lblDev)
+    $lblDev.Text = "Dispositivo: $instModel"; $lblDev.Location = New-Object System.Drawing.Point(14,12)
+    $lblDev.Size = New-Object System.Drawing.Size(352,16); $lblDev.ForeColor = [System.Drawing.Color]::FromArgb(160,160,160)
+    $lblDev.Font = New-Object System.Drawing.Font("Segoe UI",8); $dlgForm.Controls.Add($lblDev)
 
     $lblSel = New-Object Windows.Forms.Label
-    $lblSel.Text      = "Version de Magisk a instalar:"
-    $lblSel.Location  = New-Object System.Drawing.Point(14, 34)
-    $lblSel.Size      = New-Object System.Drawing.Size(352, 18)
-    $lblSel.ForeColor = [System.Drawing.Color]::Cyan
-    $lblSel.Font      = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+    $lblSel.Text = "Version de Magisk a instalar:"; $lblSel.Location = New-Object System.Drawing.Point(14,34)
+    $lblSel.Size = New-Object System.Drawing.Size(352,18); $lblSel.ForeColor = [System.Drawing.Color]::Cyan
+    $lblSel.Font = New-Object System.Drawing.Font("Segoe UI",9,[System.Drawing.FontStyle]::Bold)
     $dlgForm.Controls.Add($lblSel)
 
     $cmbVer = New-Object Windows.Forms.ComboBox
-    $cmbVer.Location      = New-Object System.Drawing.Point(14, 58)
-    $cmbVer.Size          = New-Object System.Drawing.Size(352, 26)
-    $cmbVer.DropDownStyle = "DropDownList"
-    $cmbVer.BackColor     = [System.Drawing.Color]::FromArgb(45,45,45)
-    $cmbVer.ForeColor     = [System.Drawing.Color]::Cyan
-    $cmbVer.Font          = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
-    @(
-        "Magisk v24  (legacy - A21s / A13 / A51 5G / kernel antiguo)",
-        "Magisk v27  (ultima version - recomendado)"
-    ) | ForEach-Object { $cmbVer.Items.Add($_) | Out-Null }
-    $cmbVer.SelectedIndex = $autoSelIdx
-    $dlgForm.Controls.Add($cmbVer)
+    $cmbVer.Location = New-Object System.Drawing.Point(14,58); $cmbVer.Size = New-Object System.Drawing.Size(352,26)
+    $cmbVer.DropDownStyle = "DropDownList"; $cmbVer.BackColor = [System.Drawing.Color]::FromArgb(45,45,45)
+    $cmbVer.ForeColor = [System.Drawing.Color]::Cyan
+    $cmbVer.Font = New-Object System.Drawing.Font("Segoe UI",9,[System.Drawing.FontStyle]::Bold)
+    @("Magisk v24  (legacy - A21s / A13 / A51 5G / kernel antiguo)","Magisk v27  (ultima version - recomendado)") |
+        ForEach-Object { $cmbVer.Items.Add($_) | Out-Null }
+    $cmbVer.SelectedIndex = $autoSelIdx; $dlgForm.Controls.Add($cmbVer)
 
     if ($isLegacyModel) {
         $lblNote = New-Object Windows.Forms.Label
-        $lblNote.Text      = "  Modelo legacy detectado -> v24 preseleccionada"
-        $lblNote.Location  = New-Object System.Drawing.Point(14, 84)
-        $lblNote.Size      = New-Object System.Drawing.Size(352, 15)
-        $lblNote.ForeColor = [System.Drawing.Color]::FromArgb(255,180,0)
-        $lblNote.Font      = New-Object System.Drawing.Font("Segoe UI", 7.5)
-        $dlgForm.Controls.Add($lblNote)
+        $lblNote.Text = "  Modelo legacy -> v24 preseleccionada"; $lblNote.Location = New-Object System.Drawing.Point(14,84)
+        $lblNote.Size = New-Object System.Drawing.Size(352,15); $lblNote.ForeColor = [System.Drawing.Color]::FromArgb(255,180,0)
+        $lblNote.Font = New-Object System.Drawing.Font("Segoe UI",7.5); $dlgForm.Controls.Add($lblNote)
     }
 
     $btnOk = New-Object Windows.Forms.Button
-    $btnOk.Text      = "INSTALAR"
-    $btnOk.Location  = New-Object System.Drawing.Point(14, 128)
-    $btnOk.Size      = New-Object System.Drawing.Size(170, 34)
-    $btnOk.FlatStyle = "Flat"
-    $btnOk.ForeColor = [System.Drawing.Color]::Cyan
-    $btnOk.BackColor = [System.Drawing.Color]::FromArgb(20,40,55)
+    $btnOk.Text = "INSTALAR"; $btnOk.Location = New-Object System.Drawing.Point(14,128)
+    $btnOk.Size = New-Object System.Drawing.Size(170,34); $btnOk.FlatStyle = "Flat"
+    $btnOk.ForeColor = [System.Drawing.Color]::Cyan; $btnOk.BackColor = [System.Drawing.Color]::FromArgb(20,40,55)
     $btnOk.FlatAppearance.BorderColor = [System.Drawing.Color]::Cyan
-    $btnOk.Font      = New-Object System.Drawing.Font("Segoe UI", 8.5, [System.Drawing.FontStyle]::Bold)
-    $btnOk.DialogResult = [System.Windows.Forms.DialogResult]::OK
-    $dlgForm.Controls.Add($btnOk)
+    $btnOk.Font = New-Object System.Drawing.Font("Segoe UI",8.5,[System.Drawing.FontStyle]::Bold)
+    $btnOk.DialogResult = [System.Windows.Forms.DialogResult]::OK; $dlgForm.Controls.Add($btnOk)
 
     $btnCan = New-Object Windows.Forms.Button
-    $btnCan.Text      = "CANCELAR"
-    $btnCan.Location  = New-Object System.Drawing.Point(196, 128)
-    $btnCan.Size      = New-Object System.Drawing.Size(170, 34)
-    $btnCan.FlatStyle = "Flat"
-    $btnCan.ForeColor = [System.Drawing.Color]::Gray
-    $btnCan.BackColor = [System.Drawing.Color]::FromArgb(35,35,35)
+    $btnCan.Text = "CANCELAR"; $btnCan.Location = New-Object System.Drawing.Point(196,128)
+    $btnCan.Size = New-Object System.Drawing.Size(170,34); $btnCan.FlatStyle = "Flat"
+    $btnCan.ForeColor = [System.Drawing.Color]::Gray; $btnCan.BackColor = [System.Drawing.Color]::FromArgb(35,35,35)
     $btnCan.FlatAppearance.BorderColor = [System.Drawing.Color]::Gray
-    $btnCan.Font      = New-Object System.Drawing.Font("Segoe UI", 8.5, [System.Drawing.FontStyle]::Bold)
-    $btnCan.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
-    $dlgForm.Controls.Add($btnCan)
-
+    $btnCan.Font = New-Object System.Drawing.Font("Segoe UI",8.5,[System.Drawing.FontStyle]::Bold)
+    $btnCan.DialogResult = [System.Windows.Forms.DialogResult]::Cancel; $dlgForm.Controls.Add($btnCan)
     $dlgForm.AcceptButton = $btnOk; $dlgForm.CancelButton = $btnCan
     $dlgResult = $dlgForm.ShowDialog()
 
     if ($dlgResult -ne [System.Windows.Forms.DialogResult]::OK) {
-        AdbLog "[~] Instalacion cancelada."; return
+        AdbLog "[~] Cancelado."; $btn.Enabled = $true; $btn.Text = "INSTALAR MAGISK"; return
     }
 
-    $selIdx   = $cmbVer.SelectedIndex
+    $selIdx  = $cmbVer.SelectedIndex
     $verLabel = if ($selIdx -eq 0) { "v24" } else { "v27" }
     $apkName  = if ($selIdx -eq 0) { "magisk24.apk" } else { "magisk27.apk" }
-    AdbLog "[+] Version elegida : Magisk $verLabel"
-    AdbLog "[+] APK             : $apkName"
+    AdbLog "[+] Version : Magisk $verLabel  |  APK: $apkName"
     AdbLog ""
 
-    # Buscar APK en rutas predeterminadas
-    $apkCandidates = @(
+    $apkPath = $null
+    foreach ($c in @(
         (Join-Path $script:TOOLS_DIR $apkName),
         (Join-Path $script:SCRIPT_ROOT $apkName),
-        (Join-Path $script:SCRIPT_ROOT "tools\$apkName"),
-        (Join-Path $script:SCRIPT_ROOT "modules\$apkName")
-    )
-    $apkPath = $null
-    foreach ($c in $apkCandidates) {
-        if (Test-Path $c -EA SilentlyContinue) { $apkPath = $c; break }
-    }
+        (Join-Path $script:SCRIPT_ROOT "tools\$apkName")
+    )) { if (Test-Path $c -EA SilentlyContinue) { $apkPath = $c; break } }
 
     if (-not $apkPath) {
-        AdbLog "[~] $apkName no encontrado en rutas predeterminadas."
-        AdbLog "[~] Selecciona manualmente la APK de Magisk $verLabel ..."
+        AdbLog "[~] $apkName no encontrado - selecciona manualmente..."
         $fdApk = New-Object System.Windows.Forms.OpenFileDialog
         $fdApk.Filter = "APK de Magisk (*.apk)|*.apk|Todos|*.*"
         $fdApk.Title  = "Selecciona Magisk $verLabel APK"
-        if ($fdApk.ShowDialog() -ne "OK") { AdbLog "[~] Cancelado."; return }
+        if ($fdApk.ShowDialog() -ne "OK") { AdbLog "[~] Cancelado."; $btn.Enabled=$true; $btn.Text="INSTALAR MAGISK"; return }
         $apkPath = $fdApk.FileName
     }
 
     AdbLog "[+] Ruta APK : $apkPath"
-    AdbLog "[~] Instalando via ADB (adb install -r)..."
+    AdbLog "[~] Instalando via adb install -r ..."
     AdbLog ""
-
-    $btn.Enabled = $false; $btn.Text = "INSTALANDO..."
     [System.Windows.Forms.Application]::DoEvents()
+
     try {
-        $psi = New-Object System.Diagnostics.ProcessStartInfo
-        $psi.FileName               = "adb"
-        $psi.Arguments              = "install -r `"$apkPath`""
-        $psi.RedirectStandardOutput = $true
-        $psi.RedirectStandardError  = $true
-        $psi.UseShellExecute        = $false
-        $psi.CreateNoWindow         = $true
-        $p = New-Object System.Diagnostics.Process
-        $p.StartInfo = $psi; $p.Start() | Out-Null
-        $out = $p.StandardOutput.ReadToEnd()
-        $err = $p.StandardError.ReadToEnd()
-        $p.WaitForExit()
-        $combined = ($out + "`n" + $err).Trim()
-        foreach ($line in ($combined -split "`n")) {
-            $l = $line.Trim(); if ($l) { AdbLog "  $l" }
-        }
+        $rc = (& adb install -r "$apkPath" 2>&1) -join "`n"
+        foreach ($line in ($rc -split "`n")) { $l=$line.Trim(); if ($l) { AdbLog "  $l" } }
         AdbLog ""
-        if ($combined -imatch "Success") {
+        if ($rc -imatch "Success") {
             AdbLog "[OK] Magisk $verLabel instalado correctamente."
-            AdbLog "[~] Abre la app Magisk en el equipo."
-            AdbLog "[~] Si es primera instalacion, toca 'Instalar' para"
-            AdbLog "[~] completar el setup al sistema de archivos."
+            AdbLog "[~] Abre la app Magisk en el equipo para completar el setup."
             $Global:lblStatus.Text = "  RNX TOOL PRO v2.3  |  Magisk $verLabel instalado  |  $instModel"
-        } elseif ($combined -imatch "INSTALL_FAILED") {
-            AdbLog "[!] Instalacion fallida - revisa el log."
-        } else {
-            AdbLog "[~] Proceso finalizado (cod: $($p.ExitCode))"
-        }
+        } elseif ($rc -imatch "INSTALL_FAILED") {
+            $motivo = if ($rc -match "INSTALL_FAILED_([A-Z_]+)") { $Matches[1] } else { "revisa el log" }
+            AdbLog "[!] Instalacion fallida: $motivo"
+        } else { AdbLog "[~] Proceso finalizado (cod desconocido)" }
     } catch { AdbLog "[!] Error: $_" }
     finally { $btn.Enabled = $true; $btn.Text = "INSTALAR MAGISK" }
 })
 
-# ---- RESTAURAR BACKUP (stub - futuro: selector .adb + adb restore) ----
+# ---- BUSCAR FIRMWARE SAMSUNG EN SAMFW  (btnsA2[5]) ----
 $btnsA2[5].Add_Click({
     $btn = $btnsA2[5]
-    $btn.Enabled = $false; $btn.Text = "EJECUTANDO..."
+    $btn.Enabled = $false; $btn.Text = "BUSCANDO..."
     [System.Windows.Forms.Application]::DoEvents()
     $Global:logAdb.Clear()
     AdbLog "=============================================="
-    AdbLog "   RESTAURAR BACKUP  -  RNX TOOL PRO"
+    AdbLog "   BUSCAR FIRMWARE SAMSUNG EN SAMFW  -  RNX TOOL PRO"
     AdbLog "   $(Get-Date -Format 'dd/MM/yyyy  HH:mm:ss')"
     AdbLog "=============================================="
     AdbLog ""
-    AdbLog "[~] Funcion en construccion."
-    AdbLog "[~] Planificado: selector de archivo .adb y"
-    AdbLog "[~] restauracion automatica via adb restore."
-    AdbLog ""
-    if (-not (Check-ADB)) { $btn.Enabled=$true; $btn.Text="RESTAURAR BACKUP"; return }
-    $model  = (& adb shell getprop ro.product.model 2>$null).Trim()
-    $serial = (& adb get-serialno 2>$null).Trim()
-    AdbLog "[+] Dispositivo destino: $model  ($serial)"
-    AdbLog ""
-    AdbLog "[i] Pasos planificados:"
-    AdbLog "    1. Seleccion del archivo .adb de backup"
-    AdbLog "    2. Confirmacion en el dispositivo"
-    AdbLog "    3. Restauracion de apps + datos + configuracion"
-    AdbLog "[~] PROXIMAMENTE en RNX TOOL PRO."
-    AdbLog "=============================================="
-    $btn.Enabled=$true; $btn.Text="RESTAURAR BACKUP"
-})
 
+    if (-not (Check-ADB)) {
+        AdbLog "[!] Sin dispositivo ADB conectado."
+        $btn.Enabled = $true; $btn.Text = "SAMFW FIRMWARE"; return
+    }
+
+    function SamFW-Prop($prop) {
+        $r = & adb shell getprop $prop 2>$null
+        if ($r -is [array]) { return ($r -join "").Trim() }
+        return "$r".Trim()
+    }
+
+    AdbLog "[~] Leyendo informacion del dispositivo..."
+    $sfBrand   = (SamFW-Prop "ro.product.brand").ToUpper()
+    $sfModel   = (SamFW-Prop "ro.product.model")
+    $sfBuild   = (SamFW-Prop "ro.build.display.id")
+    $sfBoot    = (SamFW-Prop "ro.boot.bootloader")
+    $sfAndroid = (SamFW-Prop "ro.build.version.release")
+    $sfCSC = (SamFW-Prop "ro.csc.sales_code")
+    if (-not $sfCSC) { $sfCSC = (SamFW-Prop "ro.csc.country.code") }
+    if (-not $sfCSC) { $sfCSC = (SamFW-Prop "ro.product.csc") }
+
+    if ($sfBrand -notmatch "SAMSUNG") {
+        AdbLog "[!] Dispositivo: $sfBrand - Esta funcion es exclusiva para SAMSUNG."
+        $btn.Enabled = $true; $btn.Text = "SAMFW FIRMWARE"; return
+    }
+    if (-not $sfModel) {
+        AdbLog "[!] No se pudo leer el modelo. Verifica la conexion ADB."
+        $btn.Enabled = $true; $btn.Text = "SAMFW FIRMWARE"; return
+    }
+
+    # Extraer binario del bootloader
+    $sfBinary = ""
+    try { $sfBinary = Get-BinaryFromBuild $sfBoot } catch {}
+    if (-not $sfBinary -or $sfBinary -eq "UNKNOWN") {
+        if ($sfBuild -match "U(\d)[A-Z0-9]*$" -or $sfBoot -match "U(\d)[A-Z0-9]*$") { $sfBinary = $Matches[1] }
+        else { $sfBinary = "?" }
+    }
+
+    $sfCSCDesc = ""
+    try { if ($sfCSC) { $sfCSCDesc = Get-CSCDecoded $sfCSC } } catch {}
+    $sfCSCLine = if ($sfCSC) { if ($sfCSCDesc) { "$sfCSC  ($sfCSCDesc)" } else { $sfCSC } } else { "NO DETECTADO" }
+
+    AdbLog "[+] Dispositivo  : SAMSUNG  $sfModel"
+    AdbLog "[+] Build        : $sfBuild"
+    AdbLog "[+] Bootloader   : $sfBoot"
+    AdbLog "[+] Binario      : $sfBinary"
+    AdbLog "[+] CSC / Region : $sfCSCLine"
+    AdbLog "[+] Android      : $sfAndroid"
+    AdbLog ""
+
+    $sfURL = if ($sfCSC) { "https://samfw.com/firmware/$sfModel/$sfCSC" } else { "https://samfw.com/firmware/$sfModel" }
+    AdbLog "[~] URL: $sfURL"
+    AdbLog ""
+
+    try { Start-Process $sfURL; AdbLog "[OK] Navegador abierto." }
+    catch { AdbLog "[!] Error abriendo navegador: $_"; AdbLog "[~] Copia la URL: $sfURL" }
+
+    AdbLog ""
+    AdbLog "[i] En SamFW:"
+    if ($sfBinary -and $sfBinary -ne "?") { AdbLog "     - Busca BINARY: $sfBinary" }
+    AdbLog "     - Haz clic en DOWNLOAD"
+    AdbLog "     - Flashea el .zip con Odin"
+    AdbLog "[i] SamFW requiere cuenta gratuita para descargar."
+    AdbLog "=============================================="
+    $Global:lblStatus.Text = "  RNX TOOL PRO v2.3  |  SamFW: $sfModel  B:$sfBinary  CSC:$sfCSC"
+    $btn.Enabled = $true; $btn.Text = "SAMFW FIRMWARE"
+})
